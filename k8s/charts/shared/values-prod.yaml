@@ -1,5 +1,0 @@
-namespace: cloudmart-prod
-environmentLabel: production
-
-config:
-  recipientEmailOverride: ""   # no override in prod — send to real recipients

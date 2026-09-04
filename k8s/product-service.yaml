@@ -20,10 +20,9 @@ spec:
       labels:
         app: product-service
     spec:
-      serviceAccountName: product-service-sa
       containers:
       - name: product-service
-        image: 175342148842.dkr.ecr.us-east-1.amazonaws.com/cloudmart/product-service:latest
+        image: <YOUR_REGISTRY>/product-service:latest
         ports:
         - containerPort: 8001
         env:
@@ -37,7 +36,7 @@ spec:
         - name: DYNAMODB_TABLE
           value: "cloudmart-products"
         - name: AWS_REGION
-          value: "us-east-1"
+          value: "<YOUR_REGION>"
         resources:
           requests:
             cpu: 100m

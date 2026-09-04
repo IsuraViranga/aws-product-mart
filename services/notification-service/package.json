@@ -9,8 +9,6 @@
     "test": "jest --coverage"
   },
   "dependencies": {
-    "@aws-sdk/client-ses": "^3.1063.0",
-    "@aws-sdk/client-sqs": "^3.1063.0",
     "express": "^4.19.2",
     "axios": "^1.7.2",
     "morgan": "^1.10.0"

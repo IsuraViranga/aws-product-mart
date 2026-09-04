@@ -1,6 +1,0 @@
-namespace: cloudmart-staging
-environmentLabel: staging
-
-config:
-  sqsQueueUrl: "https://sqs.us-east-1.amazonaws.com/175342148842/cloudmart-orders-staging"
-  recipientEmailOverride: "notec2us@outlook.com"   # redirect all emails in staging

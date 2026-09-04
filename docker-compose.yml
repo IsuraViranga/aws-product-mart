@@ -9,16 +9,10 @@ services:
     container_name: cloudmart-product
     ports:
       - "8001:8001"
-    volumes:
-      - ${USERPROFILE}/.aws:/app/.aws:ro
     environment:
       - PORT=8001
       - FLASK_DEBUG=true
-      - STORE_BACKEND=dynamodb  
-      - AWS_REGION=us-east-1
-      - AWS_SHARED_CREDENTIALS_FILE=/app/.aws/credentials
-      - AWS_CONFIG_FILE=/app/.aws/config
-      - DYNAMODB_TABLE=cloudmart-products        # Change to dynamodb|firestore|cosmosdb for cloud
+      - STORE_BACKEND=memory           # Change to dynamodb|firestore|cosmosdb for cloud
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 10s

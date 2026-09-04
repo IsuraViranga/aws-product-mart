@@ -21,10 +21,9 @@ spec:
         app: order-service
     spec:
       # TODO: Add serviceAccountName for workload identity
-      serviceAccountName: order-service-sa
       containers:
       - name: order-service
-        image: 175342148842.dkr.ecr.us-east-1.amazonaws.com/cloudmart/order-service:latest
+        image: <YOUR_REGISTRY>/order-service:latest
         ports:
         - containerPort: 8002
         env:
@@ -46,7 +45,7 @@ spec:
               name: cloudmart-config
               key: SQS_QUEUE_URL
         - name: AWS_REGION
-          value: "us-east-1"
+          value: "<YOUR_REGION>"
         resources:
           requests:
             cpu: 100m

@@ -31,7 +31,7 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: 175342148842.dkr.ecr.us-east-1.amazonaws.com/cloudmart/frontend:latest
+        image: <YOUR_REGISTRY>/frontend:latest
         ports:
         - containerPort: 80
         resources:

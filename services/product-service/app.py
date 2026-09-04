@@ -11,15 +11,8 @@ Data Store:
 import os
 import uuid
 import logging
-from decimal import Decimal
 from datetime import datetime
 from flask import Flask, jsonify, request, abort
-
-from env_loader import load_local_env
-
-load_local_env()
-
-from dynamodb import table as dynamodb_table
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -181,117 +174,10 @@ class DynamoDBStore:
     """
 
     def __init__(self):
-        self.table = dynamodb_table
-
-    @staticmethod
-    def _normalize(value):
-        if isinstance(value, Decimal):
-            if value % 1 == 0:
-                return int(value)
-            return float(value)
-        if isinstance(value, dict):
-            return {key: DynamoDBStore._normalize(val) for key, val in value.items()}
-        if isinstance(value, list):
-            return [DynamoDBStore._normalize(item) for item in value]
-        return value
-
-    @staticmethod
-    def _prepare_for_dynamodb(value):
-        if isinstance(value, float):
-            return Decimal(str(value))
-        if isinstance(value, dict):
-            return {
-                key: DynamoDBStore._prepare_for_dynamodb(val)
-                for key, val in value.items()
-            }
-        if isinstance(value, list):
-            return [DynamoDBStore._prepare_for_dynamodb(item) for item in value]
-        return value
-
-    def _scan_items(self):
-        items = []
-        kwargs = {}
-        while True:
-            response = self.table.scan(**kwargs)
-            items.extend(response.get("Items", []))
-            last_key = response.get("LastEvaluatedKey")
-            if not last_key:
-                break
-            kwargs["ExclusiveStartKey"] = last_key
-        return [self._normalize(item) for item in items]
-
-    def get_all(self, category=None, search=None):
-        results = self._scan_items()
-        if category:
-            results = [product for product in results if product.get("category") == category]
-        if search:
-            query = search.lower()
-            results = [
-                product
-                for product in results
-                if query in str(product.get("name", "")).lower()
-                or query in str(product.get("description", "")).lower()
-            ]
-        return results
-
-    def get_by_id(self, product_id):
-        response = self.table.get_item(Key={"id": product_id})
-        item = response.get("Item")
-        return self._normalize(item) if item else None
-
-    def create(self, data):
-        product_id = f"prod-{uuid.uuid4().hex[:6]}"
-        product = {
-            "id": product_id,
-            "name": data["name"],
-            "description": data.get("description", ""),
-            "price": float(data["price"]),
-            "category": data.get("category", "general"),
-            "stock": int(data.get("stock", 0)),
-            "imageUrl": data.get("imageUrl", ""),
-            "createdAt": datetime.utcnow().isoformat() + "Z",
-        }
-        self.table.put_item(Item=self._prepare_for_dynamodb(product))
-        return product
-
-    def update(self, product_id, data):
-        current = self.get_by_id(product_id)
-        if not current:
-            return None
-
-        updated = dict(current)
-        for key in ["name", "description", "price", "category", "stock", "imageUrl"]:
-            if key in data:
-                updated[key] = data[key]
-        updated["updatedAt"] = datetime.utcnow().isoformat() + "Z"
-        self.table.put_item(Item=self._prepare_for_dynamodb(updated))
-        return updated
-
-    def delete(self, product_id):
-        response = self.table.delete_item(
-            Key={"id": product_id},
-            ReturnValues="ALL_OLD",
+        raise NotImplementedError(
+            "DynamoDB store not implemented yet. "
+            "See the assignment brief Section 3.3 for guidance."
         )
-        return "Attributes" in response
-
-    def check_stock(self, product_id, quantity):
-        product = self.get_by_id(product_id)
-        if not product:
-            return False
-        return int(product.get("stock", 0)) >= quantity
-
-    def decrement_stock(self, product_id, quantity):
-        try:
-            self.table.update_item(
-                Key={"id": product_id},
-                UpdateExpression="SET stock = stock - :qty",
-                ConditionExpression="stock >= :qty",
-                ExpressionAttributeValues={":qty": quantity},
-            )
-            return True
-        except Exception as exc:
-            logger.warning("Failed to decrement stock for %s: %s", product_id, exc)
-            return False
 
 
 class FirestoreStore:

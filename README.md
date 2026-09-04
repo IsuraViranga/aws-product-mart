@@ -111,8 +111,6 @@ All services use an **adapter pattern** for cloud backends. By default, they run
 | `DYNAMODB_TABLE` | Table name | Required when STORE_BACKEND=dynamodb |
 | `FIRESTORE_COLLECTION` | Collection name | Required when STORE_BACKEND=firestore |
 
-When you run the product service in Docker with `STORE_BACKEND=dynamodb`, make sure the container can see your local AWS profile files. The provided Compose file mounts `${USERPROFILE}/.aws` into `/app/.aws`, which is the home directory used by the non-root app user in the image.
-
 ### Order Service
 
 | Variable | Values | Description |
@@ -149,20 +147,6 @@ Your group needs to:
 6. **Build CI/CD** — Automate test → build → scan → push → deploy.
 7. **Monitor** — Set up dashboards, logging, and alerts.
 8. **Optimise costs** — Tag resources, analyse spend, right-size instances.
-
-### Pushing Images to ECR
-
-If you are using PowerShell, make sure the image tag is defined before you call `docker tag`. A blank tag value produces the exact `repo:` error you saw.
-
-```powershell
-$repoUri = "175342148842.dkr.ecr.us-east-1.amazonaws.com/cloudmart/product-service"
-$commitSha = git rev-parse --short HEAD
-
-docker tag product-service:latest "$repoUri`:$commitSha"
-docker push "$repoUri`:$commitSha"
-```
-
-If you do not want to use the Git commit as a tag, replace `$commitSha` with a literal value such as `latest` or `v1.0.0`.
 
 See the full assignment brief for detailed requirements.
 
@@ -220,19 +204,14 @@ cloudmart-starter/
 
 | Name | Student ID | Responsibilities |
 |------|-----------|-----------------|
-| Gamage LPG | 214065V | User Service |
-| Bhagya LGV | 214034C | Order Service |
-| Warnasooriya ISB | 214220T | Notification Service |
-| Welhena WIT | 214226R | Frontend |
-| Rathnayake RMMN| 214172V | Product Service |
+| _[Your name]_ | _[ID]_ | _[Service]_ |
 
 ## AI Tool Disclosure
 
 
 | Model/Tool | Usage | Review Process |
 |------|-----------|-----------------|
-| Claude Web | Brainstorming the approach and work breakdown | Groupwise review of concepts suggested and WBS items.
-| Claude Code | Writing tests for services, develop infrastructure scripts and related development tasks | Code reviews through manual PR review process |
+| _[Tool]_ | _[How you used it]_ | _[How you reviewed the output]_ |
 
 ---
 

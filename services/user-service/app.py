@@ -111,142 +111,21 @@ class InMemoryUserStore:
 
 
 class PostgresUserStore:
-    """PostgreSQL adapter using psycopg2. Credentials via IRSA → Secrets Manager."""
+    """
+    Managed PostgreSQL adapter (RDS / Cloud SQL / Azure Database for PostgreSQL).
+
+    To use: set DB_BACKEND=postgres and DB_HOST / DB_PORT / DB_NAME /
+            DB_USER / DB_PASSWORD
+
+    Students: implement each method using psycopg2.
+    Credentials must come from your cloud secret manager — never hardcoded.
+    """
 
     def __init__(self):
-        import psycopg2
-        import psycopg2.extras
-        self._psycopg2 = psycopg2
-        self._conn_params = {
-            "host":     os.environ["DB_HOST"],
-            "port":     int(os.environ.get("DB_PORT", 5432)),
-            "dbname":   os.environ["DB_NAME"],
-            "user":     os.environ["DB_USER"],
-            "password": os.environ["DB_PASSWORD"],
-            "sslmode":  "require",
-        }
-        self._init_table()
-        self._seed_if_empty()
-        logger.info(f"PostgreSQL store initialised — host: {os.environ['DB_HOST']}")
-
-    def _get_conn(self):
-        return self._psycopg2.connect(**self._conn_params)
-
-    def _init_table(self):
-        conn = self._get_conn()
-        cur = conn.cursor()
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id           TEXT PRIMARY KEY,
-                email        TEXT UNIQUE NOT NULL,
-                name         TEXT NOT NULL,
-                password_hash TEXT NOT NULL,
-                role         TEXT DEFAULT 'customer',
-                address      TEXT DEFAULT '',
-                created_at   TIMESTAMPTZ DEFAULT NOW(),
-                updated_at   TIMESTAMPTZ
-            )
-        """)
-        conn.commit()
-        cur.close()
-        conn.close()
-
-    def _seed_if_empty(self):
-        conn = self._get_conn()
-        cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM users")
-        count = cur.fetchone()[0]
-        if count == 0:
-            logger.info("PostgreSQL users table is empty — seeding")
-            for u in SEED_USERS:
-                cur.execute("""
-                    INSERT INTO users (id, email, name, password_hash, role, address, created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (id) DO NOTHING
-                """, (u["id"], u["email"], u["name"], u["passwordHash"],
-                      u["role"], u["address"], u["createdAt"]))
-        conn.commit()
-        cur.close()
-        conn.close()
-
-    def _row_to_user(self, row):
-        return {
-            "id":           row[0],
-            "email":        row[1],
-            "name":         row[2],
-            "passwordHash": row[3],
-            "role":         row[4],
-            "address":      row[5],
-            "createdAt":    row[6].isoformat() + "Z" if row[6] else None,
-            "updatedAt":    row[7].isoformat() + "Z" if row[7] else None,
-        }
-
-    def find_by_email(self, email):
-        conn = self._get_conn()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT id, email, name, password_hash, role, address, created_at, updated_at "
-            "FROM users WHERE email = %s", (email,)
+        raise NotImplementedError(
+            "PostgreSQL store not implemented yet. "
+            "See the assignment brief Section 3.3 for guidance."
         )
-        row = cur.fetchone()
-        cur.close(); conn.close()
-        return self._row_to_user(row) if row else None
-
-    def find_by_id(self, user_id):
-        conn = self._get_conn()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT id, email, name, password_hash, role, address, created_at, updated_at "
-            "FROM users WHERE id = %s", (user_id,)
-        )
-        row = cur.fetchone()
-        cur.close(); conn.close()
-        return self._row_to_user(row) if row else None
-
-    def create(self, user_data):
-        conn = self._get_conn()
-        cur = conn.cursor()
-        cur.execute("""
-            INSERT INTO users (id, email, name, password_hash, role, address, created_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """, (
-            user_data["id"], user_data["email"], user_data["name"],
-            user_data["passwordHash"], user_data["role"],
-            user_data.get("address", ""), user_data["createdAt"]
-        ))
-        conn.commit()
-        cur.close(); conn.close()
-        return user_data
-
-    def update(self, user_id, data):
-        user = self.find_by_id(user_id)
-        if not user:
-            return None
-        conn = self._get_conn()
-        cur = conn.cursor()
-        cur.execute("""
-            UPDATE users
-            SET name = %s, address = %s, email = %s, updated_at = NOW()
-            WHERE id = %s
-        """, (
-            data.get("name", user["name"]),
-            data.get("address", user["address"]),
-            data.get("email", user["email"]),
-            user_id
-        ))
-        conn.commit()
-        cur.close(); conn.close()
-        return self.find_by_id(user_id)
-
-    def list_all(self):
-        conn = self._get_conn()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT id, email, name, password_hash, role, address, created_at, updated_at FROM users"
-        )
-        rows = cur.fetchall()
-        cur.close(); conn.close()
-        return [self._row_to_user(r) for r in rows]
 
 
 def create_user_store():

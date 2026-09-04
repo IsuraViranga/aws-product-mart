@@ -15,10 +15,9 @@ spec:
       labels:
         app: notification-service
     spec:
-      serviceAccountName: notification-service-sa
       containers:
       - name: notification-service
-        image: 175342148842.dkr.ecr.us-east-1.amazonaws.com/cloudmart/notification-service:latest
+        image: <YOUR_REGISTRY>/notification-service:latest
         ports:
         - containerPort: 8004
         env:
