@@ -225,7 +225,7 @@ function App() {
       {/* Header */}
       <header style={styles.header}>
         <div style={styles.logo} onClick={() => setPage('products')}>
-          LukeMart
+          CloudMart
         </div>
         <nav style={styles.nav}>
           <button style={styles.navBtn} onClick={() => setPage('products')}>Products</button>
@@ -478,7 +478,7 @@ function AuthModal({ onAuth, onClose, loading }) {
         <form onSubmit={handleSubmit}>
           {!isLogin && (
             <div style={styles.formGroup}>
-              <label style={styles.label}>Full Name</label>
+              <label style={styles.label}>Name</label>
               <input
                 style={styles.input}
                 value={formData.name}

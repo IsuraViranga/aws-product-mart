@@ -15,9 +15,11 @@ spec:
       labels:
         app: notification-service
     spec:
+      # TODO: Add serviceAccountName for workload identity
+      # serviceAccountName: notification-service-sa
       containers:
       - name: notification-service
-        image: <YOUR_REGISTRY>/notification-service:latest
+        image: <YOUR-REGISTRY>/notification-service:latest
         ports:
         - containerPort: 8004
         env:
@@ -43,26 +45,6 @@ spec:
             configMapKeyRef:
               name: cloudmart-config
               key: NOTIFICATION_POLL_INTERVAL
-        - name: AWS_REGION
-          valueFrom:
-            configMapKeyRef:
-              name: cloudmart-config
-              key: AWS_REGION
-        - name: SQS_QUEUE_URL
-          valueFrom:
-            configMapKeyRef:
-              name: cloudmart-config
-              key: SQS_QUEUE_URL
-        - name: FROM_EMAIL
-          valueFrom:
-            configMapKeyRef:
-              name: cloudmart-config
-              key: FROM_EMAIL
-        - name: RECIPIENT_EMAIL_OVERRIDE
-          valueFrom:
-            configMapKeyRef:
-              name: cloudmart-config
-              key: RECIPIENT_EMAIL_OVERRIDE
         resources:
           requests:
             cpu: 50m

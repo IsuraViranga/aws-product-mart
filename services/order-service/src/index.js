@@ -66,7 +66,6 @@ seedOrders.forEach((o) => orders.set(o.id, o));
  * Default: stores in-memory.
  * Students: implement the cloud adapter for your provider.
  */
-
 async function publishOrderEvent(event) {
   const backend = (process.env.QUEUE_BACKEND || 'memory').toLowerCase();
 
@@ -292,12 +291,10 @@ app.use((err, req, res, next) => {
 // ---------------------------------------------------------------------------
 // Start server
 // ---------------------------------------------------------------------------
-if (require.main === module) {
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[order-service] Running on port ${PORT}`);
-    console.log(`[order-service] Product service URL: ${PRODUCT_SERVICE_URL}`);
-    console.log(`[order-service] Queue backend: ${process.env.QUEUE_BACKEND || 'memory'}`);
-  });
-}
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`[order-service] Running on port ${PORT}`);
+  console.log(`[order-service] Product service URL: ${PRODUCT_SERVICE_URL}`);
+  console.log(`[order-service] Queue backend: ${process.env.QUEUE_BACKEND || 'memory'}`);
+});
 
 module.exports = app;

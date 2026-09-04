@@ -12,7 +12,7 @@ services:
     environment:
       - PORT=8001
       - FLASK_DEBUG=true
-      - STORE_BACKEND=memory           # Change to dynamodb|firestore|cosmosdb for cloud
+      - STORE_BACKEND=memory          # Change to dynamodb|firestore|cosmosdb for cloud
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 10s

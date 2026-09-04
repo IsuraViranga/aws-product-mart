@@ -20,9 +20,11 @@ spec:
       labels:
         app: product-service
     spec:
+      # TODO: Add serviceAccountName for workload identity
+      # serviceAccountName: product-service-sa
       containers:
       - name: product-service
-        image: <YOUR_REGISTRY>/product-service:latest
+        image: <YOUR-REGISTRY>/product-service:latest   # Replace with your registry URI
         ports:
         - containerPort: 8001
         env:
@@ -33,10 +35,6 @@ spec:
             configMapKeyRef:
               name: cloudmart-config
               key: PRODUCT_STORE_BACKEND
-        - name: DYNAMODB_TABLE
-          value: "cloudmart-products"
-        - name: AWS_REGION
-          value: "<YOUR_REGION>"
         resources:
           requests:
             cpu: 100m

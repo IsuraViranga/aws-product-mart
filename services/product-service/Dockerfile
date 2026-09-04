@@ -1,31 +1,31 @@
+# ---- Stage 1: Build dependencies ----
 FROM python:3.11-slim AS builder
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
-
 WORKDIR /build
-
 COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-FROM python:3.11-slim AS runtime
+# ---- Stage 2: Runtime ----
+FROM python:3.11-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
-
-RUN groupadd --system appuser \
-    && useradd --system --gid appuser --create-home --home-dir /app appuser
+# Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 WORKDIR /app
 
+# Copy installed packages from builder
 COPY --from=builder /install /usr/local
-COPY --chown=appuser:appuser app.py dynamodb.py env_loader.py .
 
+# Copy application code
+COPY app.py .
+
+# Switch to non-root user
 USER appuser
 
 EXPOSE 8001
 
+# Health check for container orchestrators
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')"
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')" || exit 1
 
 CMD ["gunicorn", "--bind", "0.0.0.0:8001", "--workers", "2", "--access-logfile", "-", "app:app"]

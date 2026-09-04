@@ -174,6 +174,8 @@ class DynamoDBStore:
     """
 
     def __init__(self):
+        # TODO: import boto3; create dynamodb resource
+        # self.table = boto3.resource('dynamodb').Table(os.environ['DYNAMODB_TABLE'])
         raise NotImplementedError(
             "DynamoDB store not implemented yet. "
             "See the assignment brief Section 3.3 for guidance."

@@ -35,9 +35,8 @@ const notificationLog = [];
 
 async function sendEmail(to, subject, body) {
   const backend = (process.env.EMAIL_BACKEND || 'console').toLowerCase();
-  const recipient = process.env.RECIPIENT_EMAIL_OVERRIDE || to;
 
-  const email = { to: recipient, subject, body, sentAt: new Date().toISOString() };
+  const email = { to, subject, body, sentAt: new Date().toISOString() };
 
   if (backend === 'ses') {
     // TODO: AWS SES — use @aws-sdk/client-ses
@@ -45,22 +44,25 @@ async function sendEmail(to, subject, body) {
     // const client = new SESClient({ region: process.env.AWS_REGION });
     // await client.send(new SendEmailCommand({
     //   Source: process.env.FROM_EMAIL,
-    //   Destination: { ToAddresses: [recipient] },
-    //   Message: { Subject: { Data: subject }, Body: { Text: { Data: body } } },
+    //   Destination: { ToAddresses: [to] },
+    //   Message: {
+    //     Subject: { Data: subject },
+    //     Body: { Text: { Data: body } },
+    //   },
     // }));
-    console.log(`[SES] Would send email to ${recipient}: ${subject}`);
+    console.log(`[SES] Would send email to ${to}: ${subject}`);
   } else if (backend === 'sendgrid') {
     // TODO: SendGrid (GCP / Azure) — use @sendgrid/mail
     // const sgMail = require('@sendgrid/mail');
     // sgMail.setApiKey(process.env.SENDGRID_API_KEY);
     // await sgMail.send({ to, from: process.env.FROM_EMAIL, subject, text: body });
-    console.log(`[SendGrid] Would send email to ${recipient}: ${subject}`);
+    console.log(`[SendGrid] Would send email to ${to}: ${subject}`);
   } else {
     // Console mode — just log the email
     console.log(`\n${'='.repeat(60)}`);
     console.log(`📧 EMAIL NOTIFICATION`);
     console.log(`${'='.repeat(60)}`);
-    console.log(`To:      ${recipient}`);
+    console.log(`To:      ${to}`);
     console.log(`Subject: ${subject}`);
     console.log(`Body:\n${body}`);
     console.log(`${'='.repeat(60)}\n`);
@@ -227,13 +229,11 @@ app.get('/notifications', (req, res) => {
 // Start server + polling
 // ---------------------------------------------------------------------------
 
-if (require.main === module) {
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[notification-service] Health endpoint on port ${PORT}`);
-    console.log(`[notification-service] Queue backend: ${process.env.QUEUE_BACKEND || 'memory'}`);
-    console.log(`[notification-service] Email backend: ${process.env.EMAIL_BACKEND || 'console'}`);
-    startPolling();
-  });
-}
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`[notification-service] Health endpoint on port ${PORT}`);
+  console.log(`[notification-service] Queue backend: ${process.env.QUEUE_BACKEND || 'memory'}`);
+  console.log(`[notification-service] Email backend: ${process.env.EMAIL_BACKEND || 'console'}`);
+  startPolling();
+});
 
 module.exports = app;

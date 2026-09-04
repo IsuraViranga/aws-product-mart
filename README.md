@@ -204,14 +204,15 @@ cloudmart-starter/
 
 | Name | Student ID | Responsibilities |
 |------|-----------|-----------------|
-| _[Your name]_ | _[ID]_ | _[Service]_ |
+| | | |
+| | | |
+| | | |
+| | | |
+| | | |
 
 ## AI Tool Disclosure
 
-
-| Model/Tool | Usage | Review Process |
-|------|-----------|-----------------|
-| _[Tool]_ | _[How you used it]_ | _[How you reviewed the output]_ |
+_[If your group used GitHub Copilot, ChatGPT, Claude, or any AI assistant, disclose here: which tools, for which tasks, and what review process you applied.]_
 
 ---
 

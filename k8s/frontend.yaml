@@ -13,25 +13,16 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
+      maxSurge: 1
+      maxUnavailable: 0
   template:
     metadata:
       labels:
         app: frontend
-      annotations:
-        instrumentation.opentelemetry.io/inject-java: "false"
-        instrumentation.opentelemetry.io/inject-nodejs: "false"
-        instrumentation.opentelemetry.io/inject-python: "false"
-        instrumentation.opentelemetry.io/inject-dotnet: "false"
-        cloudwatch.aws.amazon.com/auto-annotate-java: "false"
-        cloudwatch.aws.amazon.com/auto-annotate-nodejs: "false"
-        cloudwatch.aws.amazon.com/auto-annotate-python: "false"
-        cloudwatch.aws.amazon.com/auto-annotate-dotnet: "false"
     spec:
       containers:
       - name: frontend
-        image: <YOUR_REGISTRY>/frontend:latest
+        image: <YOUR-REGISTRY>/frontend:latest
         ports:
         - containerPort: 80
         resources:
@@ -67,27 +58,25 @@ spec:
     targetPort: 80
   type: ClusterIP
 ---
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: cloudmart-ingress
-  namespace: cloudmart-prod
-  annotations:
-    kubernetes.io/ingress.class: alb
-    alb.ingress.kubernetes.io/scheme: internet-facing
-    alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/healthcheck-path: /health
-    alb.ingress.kubernetes.io/subnets: subnet-064dd3318ad0c5b3a,subnet-0e96fde77f4dbbb00
-    alb.ingress.kubernetes.io/security-groups: sg-037da6edf934c270d
-spec:
-  ingressClassName: alb
-  rules:
-  - http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: frontend
-            port:
-              number: 80
+# TODO: Add Ingress resource with your cloud provider's load balancer controller
+# Example for AWS ALB:
+# apiVersion: networking.k8s.io/v1
+# kind: Ingress
+# metadata:
+#   name: cloudmart-ingress
+#   namespace: cloudmart-prod
+#   annotations:
+#     kubernetes.io/ingress.class: alb
+#     alb.ingress.kubernetes.io/scheme: internet-facing
+#     alb.ingress.kubernetes.io/target-type: ip
+# spec:
+#   rules:
+#   - http:
+#       paths:
+#       - path: /
+#         pathType: Prefix
+#         backend:
+#           service:
+#             name: frontend
+#             port:
+#               number: 80

@@ -112,19 +112,21 @@ class InMemoryUserStore:
 
 class PostgresUserStore:
     """
-    Managed PostgreSQL adapter (RDS / Cloud SQL / Azure Database for PostgreSQL).
+    PostgreSQL adapter — students implement this for the assignment.
 
-    To use: set DB_BACKEND=postgres and DB_HOST / DB_PORT / DB_NAME /
-            DB_USER / DB_PASSWORD
+    Set DB_BACKEND=postgres and provide:
+      DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
+    or
+      DATABASE_URL (connection string)
 
-    Students: implement each method using psycopg2.
-    Credentials must come from your cloud secret manager — never hardcoded.
+    Use psycopg2 or SQLAlchemy. Credentials should come from
+    your cloud provider's secret management service via workload identity.
     """
 
     def __init__(self):
         raise NotImplementedError(
             "PostgreSQL store not implemented yet. "
-            "See the assignment brief Section 3.3 for guidance."
+            "See the assignment brief Section 3.1 for guidance."
         )
 
 
