@@ -1,0 +1,187 @@
+# =============================================================================
+# Default deny — all ingress and egress blocked unless explicitly allowed below.
+# Principle of least privilege: nothing communicates unless we say so.
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: cloudmart-prod
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+# =============================================================================
+# frontend
+# Ingress: from ALB (all IPs — ALB uses node IPs, enforced further by SG)
+# Egress:  to product-service, order-service, user-service + DNS
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend
+  namespace: cloudmart-prod
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - {}   # ALB source IPs are node IPs — allow all; SG restricts to ALB only
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: product-service
+    ports:
+    - port: 8001
+  - to:
+    - podSelector:
+        matchLabels:
+          app: order-service
+    ports:
+    - port: 8002
+  - to:
+    - podSelector:
+        matchLabels:
+          app: user-service
+    ports:
+    - port: 8003
+  - ports:
+    - port: 53
+      protocol: UDP    # DNS resolution
+---
+# =============================================================================
+# product-service
+# Ingress: from frontend and order-service only
+# Egress:  to DynamoDB via VPC Gateway Endpoint (HTTPS) + DNS
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-product-service
+  namespace: cloudmart-prod
+spec:
+  podSelector:
+    matchLabels:
+      app: product-service
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: frontend
+    - podSelector:
+        matchLabels:
+          app: order-service
+    ports:
+    - port: 8001
+  egress:
+  - ports:
+    - port: 443    # DynamoDB via VPC Gateway Endpoint (HTTPS)
+  - ports:
+    - port: 53
+      protocol: UDP
+---
+# =============================================================================
+# order-service
+# Ingress: from frontend only
+# Egress:  to product-service (stock check) + SQS (HTTPS) + DNS
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-order-service
+  namespace: cloudmart-prod
+spec:
+  podSelector:
+    matchLabels:
+      app: order-service
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: frontend
+    ports:
+    - port: 8002
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: product-service
+    ports:
+    - port: 8001
+  - ports:
+    - port: 443    # SQS endpoint (HTTPS)
+  - ports:
+    - port: 53
+      protocol: UDP
+---
+# =============================================================================
+# user-service
+# Ingress: from frontend only
+# Egress:  to RDS on port 5432 + Secrets Manager (HTTPS via VPC endpoint) + DNS
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-user-service
+  namespace: cloudmart-prod
+spec:
+  podSelector:
+    matchLabels:
+      app: user-service
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: frontend
+    ports:
+    - port: 8003
+  egress:
+  - ports:
+    - port: 5432   # RDS PostgreSQL
+  - ports:
+    - port: 443    # Secrets Manager via VPC Interface Endpoint
+  - ports:
+    - port: 53
+      protocol: UDP
+---
+# =============================================================================
+# notification-service
+# Ingress: kubelet health check only — NO inbound HTTP from other services
+# Egress:  SQS (receive/delete) + SES (send email) — both HTTPS + DNS
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-notification-service
+  namespace: cloudmart-prod
+spec:
+  podSelector:
+    matchLabels:
+      app: notification-service
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - ports:
+    - port: 8004   # kubelet health check only
+  egress:
+  - ports:
+    - port: 443    # SQS + SES (both HTTPS)
+  - ports:
+    - port: 53
+      protocol: UDP

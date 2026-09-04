@@ -1,0 +1,43 @@
+# Default values — overridden by values-prod.yaml or values-staging.yaml
+
+namespace: cloudmart-prod
+
+replicaCount: 2
+
+image:
+  registry: 175342148842.dkr.ecr.us-east-1.amazonaws.com
+  repository: cloudmart/frontend
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  port: 80
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+# Populated at deploy time from terraform output:
+#   --set ingress.subnets="subnet-abc,subnet-def"
+#   --set ingress.securityGroup="sg-xyz"
+pdb:
+  enabled: true
+  minAvailable: 1
+
+ingress:
+  subnets: ""
+  securityGroup: ""
+
+probes:
+  readiness:
+    path: /health
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  liveness:
+    path: /health
+    initialDelaySeconds: 10
+    periodSeconds: 30

@@ -1,0 +1,106 @@
+name: Product Service - Build & Push to ECR
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'services/product-service/**'
+      - '.github/workflows/product-service.yml'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: cloudmart/product-service
+  SERVICE_PATH: services/product-service
+
+jobs:
+  build-test-push:
+    name: Build, Test, and Push to ECR
+    runs-on: ubuntu-latest
+    outputs:
+      registry: ${{ steps.ecr-login.outputs.registry }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build image
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build \
+            -t "$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" \
+            -t "$REGISTRY/$ECR_REPOSITORY:latest" \
+            "$SERVICE_PATH"
+
+      - name: Run tests inside the built image
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker run --rm \
+            -e STORE_BACKEND=memory \
+            -v "${{ github.workspace }}/${{ env.SERVICE_PATH }}/tests:/app/tests" \
+            --entrypoint sh \
+            "$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" \
+            -c "pip install --quiet pytest pytest-cov && python -m pytest tests/ --cov=. --cov-report=term-missing"
+
+      - name: Push image to ECR
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker push "$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          docker push "$REGISTRY/$ECR_REPOSITORY:latest"
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-test-push
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Update kubeconfig for EKS
+        run: aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+
+      - name: Deploy to EKS
+        env:
+          REGISTRY: ${{ needs.build-test-push.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          kubectl set image deployment/product-service \
+            product-service=$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            -n cloudmart-prod
+
+          if ! kubectl rollout status deployment/product-service -n cloudmart-prod --timeout=300s; then
+            echo "Rollout failed. Collecting diagnostics..."
+            kubectl get deployment product-service -n cloudmart-prod -o wide
+            kubectl get rs -n cloudmart-prod | grep product-service || true
+            kubectl get pods -n cloudmart-prod -l app=product-service -o wide || true
+            kubectl describe deployment product-service -n cloudmart-prod || true
+            kubectl describe pods -n cloudmart-prod -l app=product-service || true
+            kubectl logs -n cloudmart-prod -l app=product-service --tail=200 || true
+            exit 1
+          fi

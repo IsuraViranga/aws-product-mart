@@ -1,0 +1,26 @@
+.env
+*.pem
+*.key
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
+
+# Dependencies and generated output
+node_modules/
+coverage/
+npm-debug.log*
+.local-logs/
+
+# temporary files
+package-lock.json
+pnpm-lock.yaml
+__pycache__/
+
+services/product-service/venv_products
+services/product-service/.env
+services/product-service/__pycache__
+
+assignment/
+
+.DS_Store

@@ -1,0 +1,23 @@
+namespace: cloudmart-prod
+environmentLabel: production
+
+ports:
+  frontend: 80
+  productService: 8001
+  orderService: 8002
+  userService: 8003
+  notificationService: 8004
+
+config:
+  productStoreBackend: "dynamodb"
+  productServiceUrl: "http://product-service:8001"
+  orderQueueBackend: "sqs"
+  orderServiceUrl: "http://order-service:8002"
+  notificationQueueBackend: "sqs"
+  notificationEmailBackend: "ses"
+  notificationPollInterval: "5000"
+  awsRegion: "us-east-1"
+  sqsQueueUrl: "https://sqs.us-east-1.amazonaws.com/175342148842/cloudmart-orders"
+  fromEmail: "notec2much@outlook.com"
+  recipientEmailOverride: "notec2us@outlook.com"
+  userDbBackend: "postgres"

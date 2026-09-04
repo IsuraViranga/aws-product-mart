@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudmart-config
+  namespace: {{ .Values.namespace }}
+data:
+  PRODUCT_STORE_BACKEND: {{ .Values.config.productStoreBackend | quote }}
+  PRODUCT_SERVICE_URL: {{ .Values.config.productServiceUrl | quote }}
+  ORDER_QUEUE_BACKEND: {{ .Values.config.orderQueueBackend | quote }}
+  ORDER_SERVICE_URL: {{ .Values.config.orderServiceUrl | quote }}
+  NOTIFICATION_QUEUE_BACKEND: {{ .Values.config.notificationQueueBackend | quote }}
+  NOTIFICATION_EMAIL_BACKEND: {{ .Values.config.notificationEmailBackend | quote }}
+  NOTIFICATION_POLL_INTERVAL: {{ .Values.config.notificationPollInterval | quote }}
+  AWS_REGION: {{ .Values.config.awsRegion | quote }}
+  SQS_QUEUE_URL: {{ .Values.config.sqsQueueUrl | quote }}
+  FROM_EMAIL: {{ .Values.config.fromEmail | quote }}
+  RECIPIENT_EMAIL_OVERRIDE: {{ .Values.config.recipientEmailOverride | quote }}
+  USER_DB_BACKEND: {{ .Values.config.userDbBackend | quote }}

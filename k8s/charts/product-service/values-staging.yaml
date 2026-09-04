@@ -1,0 +1,19 @@
+namespace: cloudmart-staging
+replicaCount: 1
+
+dynamodb:
+  table: cloudmart-products-staging
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+pdb:
+  enabled: false
+
+hpa:
+  enabled: false

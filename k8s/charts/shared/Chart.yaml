@@ -1,0 +1,5 @@
+apiVersion: v2
+name: cloudmart-shared
+description: Shared cluster-wide resources — namespaces, ConfigMap, NetworkPolicy
+type: application
+version: 0.1.0
