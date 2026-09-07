@@ -12,6 +12,7 @@ import os
 import uuid
 import logging
 from datetime import datetime
+from decimal import Decimal
 from flask import Flask, jsonify, request, abort
 
 # ---------------------------------------------------------------------------
@@ -169,17 +170,156 @@ class DynamoDBStore:
 
     To use: set STORE_BACKEND=dynamodb and DYNAMODB_TABLE=<table-name>
 
-    Students: implement each method using boto3.
-    Requires IRSA / workload identity for credentials.
+    Credentials are never hardcoded. boto3 resolves them from the environment:
+    ~/.aws/credentials when running locally, and the instance role / IRSA
+    when running on AWS.
     """
 
+    # Attributes a client is allowed to change through update()
+    MUTABLE_FIELDS = ["name", "description", "price", "category", "stock", "imageUrl"]
+
     def __init__(self):
-        # TODO: import boto3; create dynamodb resource
-        # self.table = boto3.resource('dynamodb').Table(os.environ['DYNAMODB_TABLE'])
-        raise NotImplementedError(
-            "DynamoDB store not implemented yet. "
-            "See the assignment brief Section 3.3 for guidance."
+        import boto3
+
+        table_name = os.environ.get("DYNAMODB_TABLE", "cloudmart-products")
+        region = os.environ.get("AWS_REGION", "ap-southeast-1")
+        self.table = boto3.resource("dynamodb", region_name=region).Table(table_name)
+        logger.info("Using DynamoDB product store - table %s in %s", table_name, region)
+
+    # -- type conversion ----------------------------------------------------
+    # DynamoDB stores every number as Decimal. Flask cannot serialise Decimal,
+    # and boto3 refuses to store float, so we translate at both boundaries.
+
+    @staticmethod
+    def _from_dynamo(value):
+        if isinstance(value, Decimal):
+            return int(value) if value % 1 == 0 else float(value)
+        if isinstance(value, dict):
+            return {k: DynamoDBStore._from_dynamo(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [DynamoDBStore._from_dynamo(v) for v in value]
+        return value
+
+    @staticmethod
+    def _to_dynamo(value):
+        if isinstance(value, float):
+            return Decimal(str(value))
+        if isinstance(value, dict):
+            return {k: DynamoDBStore._to_dynamo(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [DynamoDBStore._to_dynamo(v) for v in value]
+        return value
+
+    # -- reads --------------------------------------------------------------
+
+    def get_all(self, category=None, search=None):
+        # Scan reads every item in the table, so it is billed per item read and
+        # gets slower as the catalogue grows. Fine for a small catalogue; at
+        # scale this wants a Global Secondary Index on the category attribute.
+        items, kwargs = [], {}
+        while True:
+            response = self.table.scan(**kwargs)
+            items.extend(response.get("Items", []))
+            if "LastEvaluatedKey" not in response:
+                break
+            kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+
+        results = [self._from_dynamo(item) for item in items]
+
+        if category:
+            results = [p for p in results if p.get("category") == category]
+        if search:
+            query = search.lower()
+            results = [
+                p
+                for p in results
+                if query in str(p.get("name", "")).lower()
+                or query in str(p.get("description", "")).lower()
+            ]
+        return results
+
+    def get_by_id(self, product_id):
+        item = self.table.get_item(Key={"id": product_id}).get("Item")
+        return self._from_dynamo(item) if item else None
+
+    # -- writes -------------------------------------------------------------
+
+    def create(self, data):
+        product = {
+            "id": f"prod-{uuid.uuid4().hex[:6]}",
+            "name": data["name"],
+            "description": data.get("description", ""),
+            "price": float(data["price"]),
+            "category": data.get("category", "general"),
+            "stock": int(data.get("stock", 0)),
+            "imageUrl": data.get("imageUrl", ""),
+            "createdAt": datetime.utcnow().isoformat() + "Z",
+        }
+        self.table.put_item(Item=self._to_dynamo(product))
+        return product
+
+    def update(self, product_id, data):
+        if self.get_by_id(product_id) is None:
+            return None
+
+        updates = {key: data[key] for key in self.MUTABLE_FIELDS if key in data}
+        updates["updatedAt"] = datetime.utcnow().isoformat() + "Z"
+
+        # "name" and "stock" are DynamoDB reserved words, so attributes are
+        # referenced through placeholders (#n0) instead of by literal name.
+        names = {f"#n{i}": key for i, key in enumerate(updates)}
+        values = {
+            f":v{i}": self._to_dynamo(val) for i, val in enumerate(updates.values())
+        }
+        expression = "SET " + ", ".join(f"#n{i} = :v{i}" for i in range(len(updates)))
+
+        response = self.table.update_item(
+            Key={"id": product_id},
+            UpdateExpression=expression,
+            ExpressionAttributeNames=names,
+            ExpressionAttributeValues=values,
+            ReturnValues="ALL_NEW",
         )
+        return self._from_dynamo(response["Attributes"])
+
+    def delete(self, product_id):
+        response = self.table.delete_item(
+            Key={"id": product_id},
+            ReturnValues="ALL_OLD",
+        )
+        return "Attributes" in response
+
+    # -- stock --------------------------------------------------------------
+
+    def check_stock(self, product_id, quantity):
+        product = self.get_by_id(product_id)
+        if not product:
+            return False
+        return int(product.get("stock", 0)) >= quantity
+
+    def decrement_stock(self, product_id, quantity):
+        from botocore.exceptions import ClientError
+
+        # The read and the write happen as one atomic operation: DynamoDB
+        # re-checks the stock level at write time and rejects the update if
+        # another order got there first. Two customers cannot buy the last item.
+        try:
+            self.table.update_item(
+                Key={"id": product_id},
+                UpdateExpression="SET stock = stock - :qty",
+                ConditionExpression="attribute_exists(id) AND stock >= :qty",
+                ExpressionAttributeValues={":qty": quantity},
+            )
+            return True
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                logger.warning(
+                    "Refused stock decrement for %s: not enough stock for %s units",
+                    product_id,
+                    quantity,
+                )
+                return False
+            raise
 
 
 class FirestoreStore:

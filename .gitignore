@@ -24,3 +24,6 @@ services/product-service/__pycache__
 assignment/
 
 .DS_Store
+# Python virtual environments
+.venv/
+venv/
