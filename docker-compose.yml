@@ -9,12 +9,29 @@ services:
     container_name: cloudmart-product
     ports:
       - "8001:8001"
+    # LOCAL DEVELOPMENT ONLY. Mounts your workstation's AWS credentials into the
+    # container read-only, because a container cannot see your home directory.
+    # This has no production equivalent: on AWS the container gets its
+    # credentials from an attached IAM role (EC2 instance profile / EKS IRSA),
+    # and this whole block goes away.
+    volumes:
+      - type: bind
+        source: ${USERPROFILE}/.aws
+        target: /aws
+        read_only: true
     environment:
       - PORT=8001
       - FLASK_DEBUG=true
-      - STORE_BACKEND=memory          # Change to dynamodb|firestore|cosmosdb for cloud
+      - STORE_BACKEND=dynamodb         # memory | dynamodb | firestore | cosmosdb
+      - AWS_REGION=ap-southeast-1
+      - DYNAMODB_TABLE=cloudmart-products
+      - AWS_SHARED_CREDENTIALS_FILE=/aws/credentials
+      - AWS_CONFIG_FILE=/aws/config
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      # /ready (not /health) so the check actually reaches DynamoDB. /health
+      # returns 200 even when the data store is unreachable, which would report
+      # this container as healthy while every request to it fails.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/ready')"]
       interval: 10s
       timeout: 5s
       start_period: 30s
