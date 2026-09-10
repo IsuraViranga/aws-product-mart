@@ -23,8 +23,8 @@ services:
       - PORT=8001
       - FLASK_DEBUG=true
       - STORE_BACKEND=dynamodb         # memory | dynamodb | firestore | cosmosdb
-      - AWS_REGION=ap-southeast-1
-      - DYNAMODB_TABLE=cloudmart-products
+      - AWS_REGION=${AWS_REGION}
+      - DYNAMODB_TABLE=${DYNAMODB_TABLE}
       - AWS_SHARED_CREDENTIALS_FILE=/aws/credentials
       - AWS_CONFIG_FILE=/aws/config
     healthcheck:
@@ -55,8 +55,8 @@ services:
       - PORT=8002
       - PRODUCT_SERVICE_URL=http://product-service:8001
       - QUEUE_BACKEND=sqs              # memory | sqs | pubsub | servicebus
-      - AWS_REGION=ap-southeast-1
-      - SQS_QUEUE_URL=https://sqs.ap-southeast-1.amazonaws.com/468683594325/cloudmart-orders
+      - AWS_REGION=${AWS_REGION}
+      - SQS_QUEUE_URL=${SQS_QUEUE_URL}
       - AWS_SHARED_CREDENTIALS_FILE=/aws/credentials
       - AWS_CONFIG_FILE=/aws/config
     depends_on:
@@ -109,8 +109,8 @@ services:
       - QUEUE_BACKEND=sqs              # memory | sqs | pubsub | servicebus
       - EMAIL_BACKEND=console          # memory | ses | sendgrid
       - POLL_INTERVAL_MS=5000
-      - AWS_REGION=ap-southeast-1
-      - SQS_QUEUE_URL=https://sqs.ap-southeast-1.amazonaws.com/468683594325/cloudmart-orders
+      - AWS_REGION=${AWS_REGION}
+      - SQS_QUEUE_URL=${SQS_QUEUE_URL}
       - AWS_SHARED_CREDENTIALS_FILE=/aws/credentials
       - AWS_CONFIG_FILE=/aws/config
     depends_on:
