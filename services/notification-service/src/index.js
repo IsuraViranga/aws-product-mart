@@ -157,26 +157,54 @@ async function pollOrderServiceEvents() {
   }
 }
 
+// Created on first use so the AWS SDK is only loaded when SQS is configured.
+let sqsClient = null;
+
+function getSqsClient() {
+  if (!sqsClient) {
+    const { SQSClient } = require('@aws-sdk/client-sqs');
+    sqsClient = new SQSClient({ region: process.env.AWS_REGION || 'ap-southeast-1' });
+    console.log('[notification-service] SQS client initialised');
+  }
+  return sqsClient;
+}
+
 async function pollCloudQueue() {
   const backend = (process.env.QUEUE_BACKEND || 'memory').toLowerCase();
 
   if (backend === 'sqs') {
-    // TODO: AWS SQS — use @aws-sdk/client-sqs
-    // const { SQSClient, ReceiveMessageCommand, DeleteMessageCommand } = require('@aws-sdk/client-sqs');
-    // const client = new SQSClient({ region: process.env.AWS_REGION });
-    // const response = await client.send(new ReceiveMessageCommand({
-    //   QueueUrl: process.env.SQS_QUEUE_URL,
-    //   MaxNumberOfMessages: 10,
-    //   WaitTimeSeconds: 20,
-    // }));
-    // for (const msg of response.Messages || []) {
-    //   await processOrderEvent(JSON.parse(msg.Body));
-    //   await client.send(new DeleteMessageCommand({
-    //     QueueUrl: process.env.SQS_QUEUE_URL,
-    //     ReceiptHandle: msg.ReceiptHandle,
-    //   }));
-    // }
-    console.log('[SQS] Would poll for messages...');
+    const { ReceiveMessageCommand, DeleteMessageCommand } = require('@aws-sdk/client-sqs');
+    const client = getSqsClient();
+
+    // WaitTimeSeconds = long polling: SQS holds the connection open until a
+    // message arrives or 20s pass, instead of us hammering it with empty reads.
+    const response = await client.send(
+      new ReceiveMessageCommand({
+        QueueUrl: process.env.SQS_QUEUE_URL,
+        MaxNumberOfMessages: 10,
+        WaitTimeSeconds: 20,
+      })
+    );
+
+    for (const msg of response.Messages || []) {
+      try {
+        await processOrderEvent(JSON.parse(msg.Body));
+      } catch (err) {
+        // Deliberately do NOT delete. The message becomes visible again after
+        // the visibility timeout and is retried; after maxReceiveCount failures
+        // SQS moves it to the dead-letter queue instead of blocking the queue.
+        console.error(`[SQS] Failed to process ${msg.MessageId}: ${err.message}`);
+        continue;
+      }
+
+      // Delete only after successful processing. Receiving is not consuming.
+      await client.send(
+        new DeleteMessageCommand({
+          QueueUrl: process.env.SQS_QUEUE_URL,
+          ReceiptHandle: msg.ReceiptHandle,
+        })
+      );
+    }
   } else if (backend === 'pubsub') {
     // TODO: GCP Pub/Sub — use @google-cloud/pubsub
     // Pub/Sub uses push or streaming pull — implement subscription handler
@@ -202,8 +230,22 @@ async function pollCloudQueue() {
 const POLL_INTERVAL_MS = parseInt(process.env.POLL_INTERVAL_MS || '5000', 10);
 
 function startPolling() {
-  console.log(`[Notification] Starting queue polling (every ${POLL_INTERVAL_MS}ms)`);
-  setInterval(pollCloudQueue, POLL_INTERVAL_MS);
+  const backend = (process.env.QUEUE_BACKEND || 'memory').toLowerCase();
+  console.log(`[Notification] Starting queue polling (backend: ${backend})`);
+
+  // A self-scheduling loop rather than setInterval. SQS long polling blocks for
+  // up to 20s, so a fixed 5s interval would stack up overlapping receives.
+  // In SQS mode the 20s wait is the interval; in memory mode we pace ourselves.
+  const loop = async () => {
+    try {
+      await pollCloudQueue();
+    } catch (err) {
+      console.error(`[Notification] Poll failed: ${err.message}`);
+    }
+    setTimeout(loop, backend === 'sqs' ? 0 : POLL_INTERVAL_MS);
+  };
+
+  loop();
 }
 
 // ---------------------------------------------------------------------------

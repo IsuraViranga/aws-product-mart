@@ -45,10 +45,20 @@ services:
     container_name: cloudmart-order
     ports:
       - "8002:8002"
+    # LOCAL DEVELOPMENT ONLY - see the note on product-service above.
+    volumes:
+      - type: bind
+        source: ${USERPROFILE}/.aws
+        target: /aws
+        read_only: true
     environment:
       - PORT=8002
       - PRODUCT_SERVICE_URL=http://product-service:8001
-      - QUEUE_BACKEND=memory           # Change to sqs|pubsub|servicebus for cloud
+      - QUEUE_BACKEND=sqs              # memory | sqs | pubsub | servicebus
+      - AWS_REGION=ap-southeast-1
+      - SQS_QUEUE_URL=https://sqs.ap-southeast-1.amazonaws.com/468683594325/cloudmart-orders
+      - AWS_SHARED_CREDENTIALS_FILE=/aws/credentials
+      - AWS_CONFIG_FILE=/aws/config
     depends_on:
       product-service:
         condition: service_healthy
@@ -87,12 +97,22 @@ services:
     container_name: cloudmart-notification
     ports:
       - "8004:8004"
+    # LOCAL DEVELOPMENT ONLY - see the note on product-service above.
+    volumes:
+      - type: bind
+        source: ${USERPROFILE}/.aws
+        target: /aws
+        read_only: true
     environment:
       - PORT=8004
       - ORDER_SERVICE_URL=http://order-service:8002
-      - QUEUE_BACKEND=memory           # Change to sqs|pubsub|servicebus for cloud
-      - EMAIL_BACKEND=console          # Change to ses|sendgrid for cloud
+      - QUEUE_BACKEND=sqs              # memory | sqs | pubsub | servicebus
+      - EMAIL_BACKEND=console          # memory | ses | sendgrid
       - POLL_INTERVAL_MS=5000
+      - AWS_REGION=ap-southeast-1
+      - SQS_QUEUE_URL=https://sqs.ap-southeast-1.amazonaws.com/468683594325/cloudmart-orders
+      - AWS_SHARED_CREDENTIALS_FILE=/aws/credentials
+      - AWS_CONFIG_FILE=/aws/config
     depends_on:
       order-service:
         condition: service_healthy

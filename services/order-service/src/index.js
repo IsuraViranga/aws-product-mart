@@ -66,18 +66,41 @@ seedOrders.forEach((o) => orders.set(o.id, o));
  * Default: stores in-memory.
  * Students: implement the cloud adapter for your provider.
  */
+// Created on first use so the AWS SDK is only loaded when SQS is configured.
+// Credentials are resolved by the SDK from the environment: ~/.aws locally,
+// the instance role or IRSA on AWS. Never passed in.
+let sqsClient = null;
+
+function getSqsClient() {
+  if (!sqsClient) {
+    const { SQSClient } = require('@aws-sdk/client-sqs');
+    sqsClient = new SQSClient({ region: process.env.AWS_REGION || 'ap-southeast-1' });
+    console.log('[order-service] SQS client initialised');
+  }
+  return sqsClient;
+}
+
 async function publishOrderEvent(event) {
   const backend = (process.env.QUEUE_BACKEND || 'memory').toLowerCase();
 
   if (backend === 'sqs') {
-    // TODO: AWS SQS — use @aws-sdk/client-sqs
-    // const { SQSClient, SendMessageCommand } = require('@aws-sdk/client-sqs');
-    // const client = new SQSClient({ region: process.env.AWS_REGION });
-    // await client.send(new SendMessageCommand({
-    //   QueueUrl: process.env.SQS_QUEUE_URL,
-    //   MessageBody: JSON.stringify(event),
-    // }));
-    console.log('[SQS] Would publish event:', event.type);
+    const { SendMessageCommand } = require('@aws-sdk/client-sqs');
+    const result = await getSqsClient().send(
+      new SendMessageCommand({
+        QueueUrl: process.env.SQS_QUEUE_URL,
+        MessageBody: JSON.stringify(event),
+        // Lets a consumer (or an SNS filter policy) route on type without
+        // parsing the body.
+        MessageAttributes: {
+          eventType: { DataType: 'String', StringValue: event.type },
+        },
+      })
+    );
+    console.log(
+      `[SQS] Published ${event.type} for ${event.orderId} (messageId ${result.MessageId})`
+    );
+    // Kept only so GET /events still works as a debug view. SQS is now the
+    // real delivery path; this array is no longer how anything is consumed.
     eventLog.push(event);
   } else if (backend === 'pubsub') {
     // TODO: GCP Pub/Sub — use @google-cloud/pubsub
