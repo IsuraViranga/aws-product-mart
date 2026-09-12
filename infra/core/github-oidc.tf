@@ -9,10 +9,54 @@
 # rotate, and revoking access is a Terraform change rather than a key deletion.
 # ---------------------------------------------------------------------------
 
-variable "github_repository" {
-  description = "owner/repo allowed to assume the CI role"
+variable "github_owner" {
+  description = "GitHub account that owns the repository"
   type        = string
-  default     = "IsuraViranga/aws-product-mart"
+  default     = "IsuraViranga"
+}
+
+variable "github_owner_id" {
+  description = "Numeric GitHub user/org ID. From the OIDC sub claim, or: gh api users/<owner> --jq .id"
+  type        = string
+  default     = "110254441"
+}
+
+variable "github_repo" {
+  description = "Repository name"
+  type        = string
+  default     = "aws-product-mart"
+}
+
+variable "github_repo_id" {
+  description = "Numeric repository ID. From the OIDC sub claim, or: gh api repos/<owner>/<repo> --jq .id"
+  type        = string
+  default     = "1360420722"
+}
+
+locals {
+  # GitHub issues OIDC subjects containing immutable numeric IDs alongside the
+  # names:
+  #     repo:IsuraViranga@110254441/aws-product-mart@1360420722:ref:refs/heads/main
+  #
+  # Most documentation still shows the older name-only form:
+  #     repo:IsuraViranga/aws-product-mart:ref:refs/heads/main
+  #
+  # Both are listed so the policy holds whichever GitHub sends. Note these are
+  # exact strings, not wildcards - listing two forms costs nothing in security,
+  # whereas a pattern like "repo:IsuraViranga*/..." would also match an account
+  # called IsuraVirangaEvil.
+  github_repo_refs = [
+    "${var.github_owner}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}",
+    "${var.github_owner}/${var.github_repo}",
+  ]
+
+  # Branch and event scoping: main pushes and pull requests only.
+  github_oidc_subjects = flatten([
+    for r in local.github_repo_refs : [
+      "repo:${r}:ref:refs/heads/main",
+      "repo:${r}:pull_request",
+    ]
+  ])
 }
 
 # Registers GitHub's token issuer as one AWS is willing to trust. Account-wide,
@@ -33,7 +77,6 @@ resource "aws_iam_role" "github_actions" {
   name        = "cloudmart-github-actions"
   description = "Assumed by GitHub Actions via OIDC to build and push images"
 
-  # Sessions expire after an hour. A workflow run needs minutes.
   max_session_duration = 3600
 
   assume_role_policy = jsonencode({
@@ -53,31 +96,20 @@ resource "aws_iam_role" "github_actions" {
         Action = "sts:AssumeRoleWithWebIdentity"
 
         Condition = {
-          # Checks the token was minted for AWS STS and not some other service
-          # GitHub can also issue tokens for.
+          # Confirms the token was minted for AWS STS rather than some other
+          # service GitHub can also issue tokens for.
           StringEquals = {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
           }
 
-          # THE LINE THAT MATTERS.
+          # THE CONDITION THAT MATTERS.
           #
-          # Without a `sub` condition, ANY GitHub repository on the internet
-          # could assume this role - every GitHub token has the same issuer and
-          # the same audience, so those two checks restrict nothing on their own.
-          # This is the single most common and most serious OIDC misconfiguration.
-          #
-          # `sub` format:
-          #   repo:<owner>/<repo>:ref:refs/heads/<branch>
-          #   repo:<owner>/<repo>:pull_request
-          #   repo:<owner>/<repo>:environment:<name>
-          #
-          # Scoped to main and pull requests. A push to any other branch cannot
-          # assume this role, and neither can a fork of your repository.
+          # Without a `sub` restriction, ANY GitHub repository on the internet
+          # could assume this role: every GitHub token shares the same issuer
+          # and audience, so those two checks restrict nothing by themselves.
+          # This is the most common and most serious OIDC misconfiguration.
           StringLike = {
-            "token.actions.githubusercontent.com:sub" = [
-              "repo:${var.github_repository}:ref:refs/heads/main",
-              "repo:${var.github_repository}:pull_request",
-            ]
+            "token.actions.githubusercontent.com:sub" = local.github_oidc_subjects
           }
         }
       }
@@ -134,4 +166,9 @@ resource "aws_iam_role_policy_attachment" "github_actions_ecr_push" {
 output "github_actions_role_arn" {
   description = "role-to-assume value for the GitHub Actions workflow"
   value       = aws_iam_role.github_actions.arn
+}
+
+output "github_oidc_allowed_subjects" {
+  description = "Exact sub claims this role accepts - compare against CloudTrail when debugging"
+  value       = local.github_oidc_subjects
 }
