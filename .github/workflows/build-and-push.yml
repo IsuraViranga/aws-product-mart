@@ -1,0 +1,168 @@
+name: Build, scan and push images
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch: # lets you run it by hand from the Actions tab
+
+# ---------------------------------------------------------------------------
+# THE LINE EVERYONE FORGETS.
+#
+# `id-token: write` is what allows this workflow to request an OIDC token from
+# GitHub. Without it the token is never minted and configure-aws-credentials
+# fails with "Credentials could not be loaded" - which looks like an AWS
+# problem and is actually this.
+#
+# Permissions are also narrowed here: the default GITHUB_TOKEN has write access
+# to the whole repository, and this job only needs to read the code.
+# ---------------------------------------------------------------------------
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ap-southeast-1
+  AWS_ROLE_ARN: arn:aws:iam::468683594325:role/cloudmart-github-actions
+  ECR_REGISTRY: 468683594325.dkr.ecr.ap-southeast-1.amazonaws.com
+
+  # Flip to 'true' to turn the vulnerability scan from a report into a gate
+  # that blocks the build. Left off for now because user-service is still on a
+  # Debian base and would fail - see the notes in the job summary.
+  FAIL_ON_CRITICAL: 'false'
+
+jobs:
+  build:
+    name: ${{ matrix.service }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      # One service failing should not cancel the other four - you want to see
+      # every result, not just the first failure.
+      fail-fast: false
+      matrix:
+        service:
+          - product-service
+          - order-service
+          - user-service
+          - notification-service
+          - frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # -------------------------------------------------------------------
+      # Tests
+      # -------------------------------------------------------------------
+      - name: Run tests
+        working-directory: services/${{ matrix.service }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          js_tests=(tests/*.test.js)
+          py_tests=(tests/test_*.py tests/*_test.py)
+
+          if [ ${#js_tests[@]} -gt 0 ]; then
+            npm ci
+            npm test
+          elif [ ${#py_tests[@]} -gt 0 ]; then
+            pip install --quiet -r requirements.txt pytest
+            python -m pytest tests/ -v
+          else
+            echo "::warning title=No tests::${{ matrix.service }} has no test suite. \
+          Writing one is an outstanding deliverable, not a passing build."
+          fi
+
+      # -------------------------------------------------------------------
+      # Authenticate to AWS - no stored credentials involved
+      # -------------------------------------------------------------------
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # No access key, no secret. GitHub presents a signed token; AWS
+          # verifies it against the trust policy and returns temporary creds.
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-${{ github.run_id }} # shows up in CloudTrail
+
+      - name: Verify which identity we got
+        run: aws sts get-caller-identity
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # -------------------------------------------------------------------
+      # Build
+      # -------------------------------------------------------------------
+      - name: Build image
+        run: |
+          set -euo pipefail
+          # --provenance=false produces a single plain manifest instead of an
+          # image index plus attestation. Without it, ECR's basic scanner has
+          # nothing to scan, because the tag points at an index rather than an
+          # image. (Found the hard way in Step 10.)
+          docker build \
+            --provenance=false \
+            --pull \
+            -t "$ECR_REGISTRY/cloudmart/${{ matrix.service }}:${{ github.sha }}" \
+            -t "$ECR_REGISTRY/cloudmart/${{ matrix.service }}:latest" \
+            "services/${{ matrix.service }}"
+
+      # -------------------------------------------------------------------
+      # Push - only from main. A pull request builds to prove it compiles,
+      # but must not publish an image anyone could then deploy.
+      # -------------------------------------------------------------------
+      - name: Push image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          docker push "$ECR_REGISTRY/cloudmart/${{ matrix.service }}:${{ github.sha }}"
+          docker push "$ECR_REGISTRY/cloudmart/${{ matrix.service }}:latest"
+
+      # -------------------------------------------------------------------
+      # Vulnerability scan
+      # -------------------------------------------------------------------
+      - name: Wait for scan and report findings
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          REPO="cloudmart/${{ matrix.service }}"
+
+          # scan_on_push is enabled on the repository, so a scan starts by
+          # itself. Poll until it finishes - it usually takes 10-60 seconds.
+          for _ in $(seq 1 30); do
+            STATUS=$(aws ecr describe-image-scan-findings \
+              --repository-name "$REPO" \
+              --image-id imageTag=${{ github.sha }} \
+              --region "$AWS_REGION" \
+              --query 'imageScanStatus.status' --output text 2>/dev/null || echo PENDING)
+            [ "$STATUS" = "COMPLETE" ] && break
+            sleep 10
+          done
+
+          COUNTS=$(aws ecr describe-image-scan-findings \
+            --repository-name "$REPO" \
+            --image-id imageTag=${{ github.sha }} \
+            --region "$AWS_REGION" \
+            --query 'imageScanFindings.findingSeverityCounts' --output json)
+
+          CRITICAL=$(echo "$COUNTS" | python3 -c "import sys,json;print(json.load(sys.stdin).get('CRITICAL',0))")
+          HIGH=$(echo "$COUNTS" | python3 -c "import sys,json;print(json.load(sys.stdin).get('HIGH',0))")
+
+          # Renders as a table on the workflow run page.
+          {
+            echo "### ${{ matrix.service }} scan results"
+            echo ""
+            echo "| Severity | Count |"
+            echo "|---|---|"
+            echo "| CRITICAL | $CRITICAL |"
+            echo "| HIGH | $HIGH |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "CRITICAL=$CRITICAL HIGH=$HIGH"
+
+          if [ "$FAIL_ON_CRITICAL" = "true" ] && [ "$CRITICAL" -gt 0 ]; then
+            echo "::error title=Critical vulnerabilities::$CRITICAL critical findings in $REPO"
+            exit 1
+          fi
