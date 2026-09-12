@@ -1,12 +1,12 @@
 # ---- Stage 1: Install dependencies ----
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /build
 COPY package*.json ./
 RUN npm install --omit=dev
 
 # ---- Stage 2: Runtime ----
-FROM node:20-alpine
+FROM node:22-alpine
 
 # Create non-root user
 RUN addgroup -S appuser && adduser -S appuser -G appuser
@@ -26,6 +26,6 @@ USER appuser
 EXPOSE 8002
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-  CMD wget -qO- http://localhost:8002/health || exit 1
+  CMD wget -qO- http://127.0.0.1:8002/health || exit 1
 
 CMD ["node", "src/index.js"]
