@@ -1,0 +1,13 @@
+# A namespace is a folder for Kubernetes objects. Everything CloudMart owns
+# goes in here, which means:
+#
+#   - `kubectl get pods -n cloudmart` shows your app and nothing else
+#   - `kubectl delete namespace cloudmart` removes all of it in one go
+#   - the IRSA trust policies name this namespace explicitly, so a pod running
+#     somewhere else cannot assume your roles even with the same name
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cloudmart
+  labels:
+    app.kubernetes.io/part-of: cloudmart

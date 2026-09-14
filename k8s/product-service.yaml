@@ -1,89 +1,169 @@
+# ---------------------------------------------------------------------------
+# product-service
+#
+# Three objects, which together are the Kubernetes equivalent of one
+# docker-compose service:
+#
+#   ServiceAccount  the pod's identity, linked to an AWS IAM role
+#   Deployment      what to run, how many, and how to replace them
+#   Service         a stable address other pods can reach it on
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# 1. Identity
+#
+# This annotation is the entire IRSA link. When a pod runs as this
+# ServiceAccount, EKS injects a signed token and the AWS SDK trades it for
+# temporary credentials for this role. It replaces the ${USERPROFILE}/.aws
+# bind mount in docker-compose.yml.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: product-service
+  namespace: cloudmart
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::468683594325:role/cloudmart-irsa-product-service
+---
+# ---------------------------------------------------------------------------
+# 2. Deployment
+# ---------------------------------------------------------------------------
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: product-service
-  namespace: cloudmart-prod
+  namespace: cloudmart
   labels:
     app: product-service
 spec:
+  # Two copies, on different nodes. Compose runs one container; this is the
+  # first thing Kubernetes gives you that compose cannot.
   replicas: 2
+
+  # How the Deployment finds the pods it owns. Must match the pod labels below.
   selector:
     matchLabels:
       app: product-service
+
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1
+      # Never drop below the desired count during an update, and add at most
+      # one extra pod while rolling. With replicas: 2 this means a new pod must
+      # pass its readiness probe before an old one is removed - so there is no
+      # window where the service is down.
       maxUnavailable: 0
+      maxSurge: 1
+
   template:
     metadata:
       labels:
         app: product-service
     spec:
-      # TODO: Add serviceAccountName for workload identity
-      # serviceAccountName: product-service-sa
+      serviceAccountName: product-service
+
       containers:
-      - name: product-service
-        image: <YOUR-REGISTRY>/product-service:latest   # Replace with your registry URI
-        ports:
-        - containerPort: 8001
-        env:
-        - name: PORT
-          value: "8001"
-        - name: STORE_BACKEND
-          valueFrom:
-            configMapKeyRef:
-              name: cloudmart-config
-              key: PRODUCT_STORE_BACKEND
-        resources:
-          requests:
-            cpu: 100m
-            memory: 128Mi
-          limits:
-            cpu: 500m
-            memory: 256Mi
-        readinessProbe:
-          httpGet:
-            path: /ready
-            port: 8001
-          initialDelaySeconds: 5
-          periodSeconds: 10
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8001
-          initialDelaySeconds: 10
-          periodSeconds: 30
+        - name: product-service
+          # Pinned to a commit SHA, not :latest. You can look at a running pod
+          # and know exactly which commit built it. With :latest you cannot,
+          # and a restart can silently pick up different code.
+          image: 468683594325.dkr.ecr.ap-southeast-1.amazonaws.com/cloudmart/product-service:a2d828a3ca9326e9925a542c6ef926274487c7bd
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - name: http
+              containerPort: 8001
+
+          env:
+            - name: PORT
+              value: "8001"
+            - name: STORE_BACKEND
+              value: dynamodb
+            - name: AWS_REGION
+              value: ap-southeast-1
+            - name: DYNAMODB_TABLE
+              value: cloudmart-products
+            # Deliberately absent: AWS_SHARED_CREDENTIALS_FILE and
+            # AWS_CONFIG_FILE. IRSA sets AWS_ROLE_ARN and
+            # AWS_WEB_IDENTITY_TOKEN_FILE automatically, and the SDK finds
+            # them without being told.
+
+          # ------------------------------------------------------------------
+          # Probes. Your compose healthcheck was one check; Kubernetes wants
+          # two, and your app already has the right endpoints for both.
+          # ------------------------------------------------------------------
+
+          # Can it serve traffic? /ready actually touches DynamoDB. Failing
+          # this removes the pod from the Service - no traffic, no restart.
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+
+          # Is the process wedged? /health returns 200 whenever Flask is alive,
+          # which is exactly right here: failing this RESTARTS the container,
+          # so it must not depend on DynamoDB. A blip in DynamoDB should stop
+          # traffic, not trigger a restart loop.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+
+          resources:
+            # requests are what the scheduler reserves when placing the pod.
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              # Memory limit only, no CPU limit. Over a memory limit the
+              # container is killed, so a cap protects the node. A CPU limit
+              # instead throttles the process, which shows up as mysterious
+              # latency - so we set the request and let it burst.
+              memory: 192Mi
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            # Note: no runAsNonRoot here, deliberately. The Dockerfile says
+            # `USER appuser` - a NAME, not a numeric UID. Kubernetes cannot
+            # verify a name is non-root without resolving it, so runAsNonRoot
+            # would refuse to start the pod:
+            #   "container has runAsNonRoot and image has non-numeric user"
+            # The container still runs as appuser. Fixing this properly means
+            # `USER 10001` in the Dockerfile.
 ---
+# ---------------------------------------------------------------------------
+# 3. Service
+#
+# A stable name and IP in front of the pods. Pods come and go with their own
+# addresses; this does not.
+#
+# This is what makes order-service's existing PRODUCT_SERVICE_URL work
+# unchanged - CoreDNS resolves "product-service" to this Service's IP, and it
+# load-balances across whichever pods are currently ready.
+#
+# type: ClusterIP means in-cluster only. Nothing outside the cluster can reach
+# it - that comes later, via the Ingress.
+# ---------------------------------------------------------------------------
 apiVersion: v1
 kind: Service
 metadata:
   name: product-service
-  namespace: cloudmart-prod
+  namespace: cloudmart
+  labels:
+    app: product-service
 spec:
+  type: ClusterIP
   selector:
     app: product-service
   ports:
-  - port: 8001
-    targetPort: 8001
-  type: ClusterIP
----
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: product-service-hpa
-  namespace: cloudmart-prod
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: product-service
-  minReplicas: 2
-  maxReplicas: 6
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 60
+    - name: http
+      port: 8001
+      targetPort: http
