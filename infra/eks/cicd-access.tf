@@ -31,6 +31,46 @@ locals {
   github_actions_role_arn = data.terraform_remote_state.core.outputs.github_actions_role_arn
 }
 
+# ---------------------------------------------------------------------------
+# The AWS-side half.
+#
+# Easy to miss, and the failure is confusing when you do: the access entry
+# below grants KUBERNETES permissions, but `aws eks update-kubeconfig` is an
+# AWS API call. It needs eks:DescribeCluster in IAM to read the endpoint and
+# CA certificate before kubectl exists at all.
+#
+# Without it the deploy job fails at the first kubectl step with an IAM error,
+# which reads like the access entry is broken when it is perfectly fine. Two
+# permission systems, both required, failing in the wrong-looking place.
+#
+# Scoped to this one cluster - the role cannot enumerate or describe others.
+# ---------------------------------------------------------------------------
+
+resource "aws_iam_policy" "github_actions_eks" {
+  name        = "cloudmart-github-actions-eks-describe"
+  description = "Lets the CI role run aws eks update-kubeconfig against the cloudmart cluster"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "DescribeThisClusterOnly"
+        Effect   = "Allow"
+        Action   = ["eks:DescribeCluster"]
+        Resource = module.eks.cluster_arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "github_actions_eks" {
+  # The role itself is managed in infra/core; this only attaches a policy to
+  # it. Attaching from here keeps the EKS-specific grant with the EKS state, so
+  # destroying the cluster removes the permission to reach it.
+  role       = "cloudmart-github-actions"
+  policy_arn = aws_iam_policy.github_actions_eks.arn
+}
+
 resource "aws_eks_access_entry" "github_actions" {
   cluster_name  = module.eks.cluster_name
   principal_arn = local.github_actions_role_arn

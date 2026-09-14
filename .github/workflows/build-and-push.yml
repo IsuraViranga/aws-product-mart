@@ -206,11 +206,25 @@ jobs:
       - name: Point kubectl at the cluster
         run: |
           set -euo pipefail
-          aws eks update-kubeconfig --region "$AWS_REGION" --name cloudmart
-          # Proves the access entry works before we try to change anything.
-          # If the scoping is wrong this fails here with a clear error rather
-          # than midway through a rollout.
-          kubectl auth can-i create deployments -n cloudmart
+
+          # This is an AWS API call, not a Kubernetes one. It needs
+          # eks:DescribeCluster in IAM - granted by the policy in
+          # infra/eks/cicd-access.tf. An access entry alone is not enough.
+          if ! aws eks update-kubeconfig --region "$AWS_REGION" --name cloudmart; then
+            echo "::error title=Cannot describe cluster::The IAM role lacks eks:DescribeCluster. This is an IAM problem, not a Kubernetes one."
+            exit 1
+          fi
+
+          # And this is the Kubernetes half - the EKS access entry. Checked
+          # separately so the two failure modes are distinguishable. Note
+          # `auth can-i` exits non-zero when the answer is "no", so it needs
+          # handling rather than being left to set -e.
+          if ! kubectl auth can-i create deployments -n cloudmart >/dev/null 2>&1; then
+            echo "::error title=No cluster access::Reached AWS, but the role has no Kubernetes permission in the cloudmart namespace. Check the EKS access entry."
+            exit 1
+          fi
+
+          echo "AWS and Kubernetes access both confirmed"
 
       - name: Pin manifests to this commit
         run: |
