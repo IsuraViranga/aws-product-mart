@@ -42,12 +42,12 @@ resources:
 # ---------------------------------------------------------------------------
 images:
   - name: 468683594325.dkr.ecr.ap-southeast-1.amazonaws.com/cloudmart/product-service
-    newTag: a2d828a3ca9326e9925a542c6ef926274487c7bd
+    newTag: c872e6507e0d8b15dcf67940e47d4c940fb63a4a
   - name: 468683594325.dkr.ecr.ap-southeast-1.amazonaws.com/cloudmart/order-service
-    newTag: a2d828a3ca9326e9925a542c6ef926274487c7bd
+    newTag: c872e6507e0d8b15dcf67940e47d4c940fb63a4a
   - name: 468683594325.dkr.ecr.ap-southeast-1.amazonaws.com/cloudmart/user-service
-    newTag: a2d828a3ca9326e9925a542c6ef926274487c7bd
+    newTag: c872e6507e0d8b15dcf67940e47d4c940fb63a4a
   - name: 468683594325.dkr.ecr.ap-southeast-1.amazonaws.com/cloudmart/notification-service
-    newTag: a2d828a3ca9326e9925a542c6ef926274487c7bd
+    newTag: c872e6507e0d8b15dcf67940e47d4c940fb63a4a
   - name: 468683594325.dkr.ecr.ap-southeast-1.amazonaws.com/cloudmart/frontend
-    newTag: a2d828a3ca9326e9925a542c6ef926274487c7bd
+    newTag: c872e6507e0d8b15dcf67940e47d4c940fb63a4a

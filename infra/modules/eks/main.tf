@@ -279,24 +279,20 @@ resource "aws_eks_access_policy_association" "admin" {
 # specific cluster, and the VPC outlives any cluster built on it.
 # ---------------------------------------------------------------------------
 
-resource "aws_ec2_tag" "public_elb" {
-  for_each = toset(var.public_subnet_ids)
+# NOTE: kubernetes.io/role/elb and kubernetes.io/role/internal-elb are NOT set
+# here. The networking module already applies them (see its main.tf), because
+# they describe the subnet's purpose, not any particular cluster.
+#
+# They were briefly duplicated here as aws_ec2_tag resources, which made two
+# roots manage one tag: destroying the cluster stripped the tag, and the next
+# apply of infra/network put it back. Two roots fighting over one field is a
+# drift loop, and the fix is for exactly one of them to own it.
+#
+# The tag below is different - it names THIS cluster, so it belongs with the
+# cluster and is correctly removed when the cluster goes.
 
-  resource_id = each.value
-  key         = "kubernetes.io/role/elb"
-  value       = "1"
-}
-
-resource "aws_ec2_tag" "private_internal_elb" {
-  for_each = toset(var.private_subnet_ids)
-
-  resource_id = each.value
-  key         = "kubernetes.io/role/internal-elb"
-  value       = "1"
-}
-
-# Marks the subnets as belonging to this cluster. "shared" rather than "owned"
-# means destroying the cluster will not try to take the subnets with it.
+# "shared" rather than "owned" means destroying the cluster will not try to
+# take the subnets with it.
 resource "aws_ec2_tag" "cluster_shared" {
   for_each = toset(concat(var.public_subnet_ids, var.private_subnet_ids))
 

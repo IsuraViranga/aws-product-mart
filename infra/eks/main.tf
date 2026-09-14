@@ -99,10 +99,14 @@ variable "cluster_name" {
   default = "cloudmart"
 }
 
+# Pinned after the first apply, as the module comment advised. Left null, AWS
+# picks whatever its current default is - so rebuilding this cluster in a month
+# could silently give you a different Kubernetes version than the one you
+# tested against. Pinned, an upgrade is something you choose.
 variable "kubernetes_version" {
-  description = "Pin this after the first apply. Null lets AWS pick the current default."
+  description = "Kubernetes minor version. Pinned deliberately - bump it on purpose, not by accident."
   type        = string
-  default     = null
+  default     = "1.36"
 }
 
 # Narrow this to your own address for a real improvement in exposure:
