@@ -1,0 +1,53 @@
+# ---------------------------------------------------------------------------
+# Kustomize entry point.
+#
+# `kubectl apply -k k8s/` applies exactly the resources listed here, in this
+# order. Two things this buys over `kubectl apply -f k8s/`:
+#
+#   1. The starter-code files (namespace.yaml, configmap.yaml) are simply not
+#      listed, so they are never applied. No need to delete them to be safe.
+#
+#   2. Image tags live in ONE place - the images: block below - instead of
+#      being repeated across five Deployment files. The CI deploy job rewrites
+#      that one field and applies. Without this it would have to sed five
+#      files and hope the regex held.
+#
+# Order still matters for the frontend: nginx resolves its upstreams at
+# startup, so the backend Services must exist first. The list below preserves
+# the numbering that guarantees it.
+# ---------------------------------------------------------------------------
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - 00-namespace.yaml
+  - 10-product-service.yaml
+  - 11-order-service.yaml
+  - 12-user-service.yaml
+  - 13-notification-service.yaml
+  - 20-frontend.yaml
+  - 30-ingress.yaml
+
+# ---------------------------------------------------------------------------
+# Image tags.
+#
+# All five move together because they are built from one commit by one
+# workflow run. `newTag` overrides whatever tag is written in the Deployment,
+# so the YAML files can keep a real, working tag for local use while CI
+# overrides it per run.
+#
+# The deploy job rewrites these with the commit SHA. Keeping them pinned to a
+# real SHA here (rather than a placeholder) means `kubectl apply -k k8s/` from
+# a laptop deploys something that actually exists.
+# ---------------------------------------------------------------------------
+images:
+  - name: 468683594325.dkr.ecr.ap-southeast-1.amazonaws.com/cloudmart/product-service
+    newTag: a2d828a3ca9326e9925a542c6ef926274487c7bd
+  - name: 468683594325.dkr.ecr.ap-southeast-1.amazonaws.com/cloudmart/order-service
+    newTag: a2d828a3ca9326e9925a542c6ef926274487c7bd
+  - name: 468683594325.dkr.ecr.ap-southeast-1.amazonaws.com/cloudmart/user-service
+    newTag: a2d828a3ca9326e9925a542c6ef926274487c7bd
+  - name: 468683594325.dkr.ecr.ap-southeast-1.amazonaws.com/cloudmart/notification-service
+    newTag: a2d828a3ca9326e9925a542c6ef926274487c7bd
+  - name: 468683594325.dkr.ecr.ap-southeast-1.amazonaws.com/cloudmart/frontend
+    newTag: a2d828a3ca9326e9925a542c6ef926274487c7bd

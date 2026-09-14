@@ -166,3 +166,126 @@ jobs:
             echo "::error title=Critical vulnerabilities::$CRITICAL critical findings in $REPO"
             exit 1
           fi
+
+  # =========================================================================
+  # Deploy to EKS
+  #
+  # Runs only after all five builds succeed, and only for a push to main.
+  # `needs: build` waits for every matrix leg, so a broken service cannot be
+  # half-deployed alongside four working ones.
+  #
+  # This job assumes the same IAM role as the build, but uses different
+  # permissions: the role has an EKS access entry scoped to the cloudmart
+  # namespace with AmazonEKSEditPolicy. It can roll out the app and nothing
+  # else - it cannot touch kube-system.
+  # =========================================================================
+  deploy:
+    name: Deploy to EKS
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    # Two runs of this job must never overlap - a second deploy starting
+    # mid-rollout would fight the first. Queue instead of running in parallel,
+    # and do NOT cancel in progress: a half-finished rollout is worse than a
+    # slightly stale one.
+    concurrency:
+      group: deploy-eks
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-deploy-${{ github.run_id }}
+
+      - name: Point kubectl at the cluster
+        run: |
+          set -euo pipefail
+          aws eks update-kubeconfig --region "$AWS_REGION" --name cloudmart
+          # Proves the access entry works before we try to change anything.
+          # If the scoping is wrong this fails here with a clear error rather
+          # than midway through a rollout.
+          kubectl auth can-i create deployments -n cloudmart
+
+      - name: Pin manifests to this commit
+        run: |
+          set -euo pipefail
+          # One field, one file. Kustomize applies newTag to every Deployment
+          # that references the matching image name.
+          sed -i "s|^\( *newTag:\).*|\1 ${GITHUB_SHA}|" k8s/kustomization.yaml
+          echo "Deploying tag ${GITHUB_SHA}"
+          grep -n "newTag:" k8s/kustomization.yaml
+
+      - name: Apply
+        run: |
+          set -euo pipefail
+          # Server-side diff first, so the log shows exactly what is changing.
+          kubectl diff -k k8s/ || true
+          kubectl apply -k k8s/
+
+      # -------------------------------------------------------------------
+      # Wait for the rollout, and fail if it does not converge.
+      #
+      # Without this the job goes green the moment the API accepts the new
+      # spec - before a single new pod has started. A crash-looping image
+      # would report a successful deploy.
+      #
+      # maxUnavailable: 0 in the Deployments means a new pod must pass its
+      # readiness probe before an old one is removed, so a failure here leaves
+      # the previous version still serving traffic.
+      # -------------------------------------------------------------------
+      - name: Wait for rollout
+        id: rollout
+        run: |
+          set -euo pipefail
+          for d in product-service order-service user-service notification-service frontend; do
+            echo "::group::rollout $d"
+            kubectl rollout status "deployment/$d" -n cloudmart --timeout=5m
+            echo "::endgroup::"
+          done
+
+      # -------------------------------------------------------------------
+      # Roll back anything that failed to converge.
+      #
+      # `rollout undo` returns the Deployment to its previous ReplicaSet -
+      # Kubernetes keeps the old one around precisely for this. Because
+      # maxUnavailable is 0, the old pods were never removed, so this is fast
+      # and the service was never actually down.
+      # -------------------------------------------------------------------
+      - name: Roll back on failure
+        if: failure() && steps.rollout.outcome == 'failure'
+        run: |
+          set +e
+          echo "::error title=Deploy failed::Rolling back to the previous version"
+          for d in product-service order-service user-service notification-service frontend; do
+            kubectl rollout undo "deployment/$d" -n cloudmart 2>/dev/null
+          done
+          echo "--- pods after rollback ---"
+          kubectl get pods -n cloudmart
+          echo "--- recent events ---"
+          kubectl get events -n cloudmart --sort-by=.lastTimestamp | tail -20
+
+      - name: Summary
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo "### Deployment"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Commit | \`${GITHUB_SHA:0:12}\` |"
+            echo "| Result | ${{ steps.rollout.outcome || 'not reached' }} |"
+            echo ""
+            echo '```'
+            kubectl get pods -n cloudmart -o wide 2>/dev/null || echo "could not reach cluster"
+            echo '```'
+            echo ""
+            ADDR=$(kubectl get ingress cloudmart -n cloudmart -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+            [ -n "$ADDR" ] && echo "Live at http://$ADDR"
+          } >> "$GITHUB_STEP_SUMMARY"
