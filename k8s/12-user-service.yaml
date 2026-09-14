@@ -1,0 +1,130 @@
+# ---------------------------------------------------------------------------
+# user-service
+#
+# The odd one out: it touches no AWS service at all (DB_BACKEND=memory), so it
+# gets a ServiceAccount with NO role annotation. A pod running this can obtain
+# no AWS credentials of any kind. That is the point - identity is granted per
+# workload, not per cluster.
+#
+# It does have a secret, which is where this differs from the others.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# The JWT signing key.
+#
+# In docker-compose.yml this is a plain environment variable reading
+# "cloudmart-dev-secret-change-in-production". Anyone with the repo has it.
+#
+# A Kubernetes Secret is better but NOT encryption: the value below is
+# base64-encoded, which is encoding, not secrecy - `base64 -d` reverses it in
+# one command. What a Secret actually buys you here is:
+#
+#   - it can be RBAC-restricted separately from other config
+#   - it is not printed by `kubectl describe pod`
+#   - it can be swapped for a real secret store without touching the Deployment
+#
+# The honest next step for production is External Secrets Operator or the AWS
+# Secrets Store CSI driver, pulling from AWS Secrets Manager. That is a
+# deliberate follow-up, not an oversight.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: Secret
+metadata:
+  name: user-service-jwt
+  namespace: cloudmart
+type: Opaque
+stringData:
+  # stringData takes plain text and base64-encodes it on the way in, so the
+  # file stays readable. Still committed to git, so still not a real secret.
+  jwt-secret: cloudmart-dev-secret-change-in-production
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: user-service
+  namespace: cloudmart
+  # No eks.amazonaws.com/role-arn annotation, deliberately. No AWS access.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-service
+  namespace: cloudmart
+  labels:
+    app: user-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: user-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: user-service
+    spec:
+      serviceAccountName: user-service
+      containers:
+        - name: user-service
+          image: 468683594325.dkr.ecr.ap-southeast-1.amazonaws.com/cloudmart/user-service:a2d828a3ca9326e9925a542c6ef926274487c7bd
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8003
+          env:
+            - name: PORT
+              value: "8003"
+            - name: DB_BACKEND
+              value: memory
+            # Read from the Secret rather than written inline. The Deployment
+            # spec no longer contains the value, so `kubectl get deploy -o yaml`
+            # does not leak it.
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: user-service-jwt
+                  key: jwt-secret
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              memory: 192Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-service
+  namespace: cloudmart
+  labels:
+    app: user-service
+spec:
+  type: ClusterIP
+  selector:
+    app: user-service
+  ports:
+    - name: http
+      port: 8003
+      targetPort: http

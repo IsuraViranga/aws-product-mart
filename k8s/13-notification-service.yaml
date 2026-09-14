@@ -1,0 +1,105 @@
+# ---------------------------------------------------------------------------
+# notification-service
+#
+# The genuinely different one: it has NO Service object.
+#
+# Nothing in the cluster calls it. It is a worker - it polls SQS for order
+# events and sends emails. A Service exists to give callers a stable address,
+# and this has no callers, so it does not get one.
+#
+# Consequences worth understanding:
+#   - it is unreachable from anywhere, including the frontend. Correct.
+#   - its probes still work: the kubelet on its own node calls them directly
+#     on the pod IP, which needs no Service.
+#   - to debug it you use `kubectl logs` or `kubectl port-forward` against the
+#     POD, not a Service.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: notification-service
+  namespace: cloudmart
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::468683594325:role/cloudmart-irsa-notification-service
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+  namespace: cloudmart
+  labels:
+    app: notification-service
+spec:
+  # One replica, not two.
+  #
+  # Two consumers polling the same SQS queue both receive messages, and SQS
+  # standard queues guarantee at-least-once delivery, not exactly-once. With
+  # two replicas a customer can get two emails for one order. Scaling a
+  # consumer safely needs idempotent handling, which this service does not
+  # have - so the honest answer is one replica.
+  #
+  # This is the kind of thing that is invisible until it is in production.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notification-service
+  strategy:
+    # Recreate, not RollingUpdate: stop the old pod before starting the new
+    # one, so there is never a moment with two consumers on the queue. A brief
+    # gap in processing is fine - messages wait in SQS.
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: notification-service
+    spec:
+      serviceAccountName: notification-service
+      containers:
+        - name: notification-service
+          image: 468683594325.dkr.ecr.ap-southeast-1.amazonaws.com/cloudmart/notification-service:a2d828a3ca9326e9925a542c6ef926274487c7bd
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8004
+          env:
+            - name: PORT
+              value: "8004"
+            - name: ORDER_SERVICE_URL
+              value: http://order-service:8002
+            - name: QUEUE_BACKEND
+              value: sqs
+            # console, not ses. Emails are printed to stdout, so you read them
+            # with `kubectl logs`. Switching to real email means SES, which
+            # needs a verified domain and a production-access request.
+            - name: EMAIL_BACKEND
+              value: console
+            - name: POLL_INTERVAL_MS
+              value: "5000"
+            - name: AWS_REGION
+              value: ap-southeast-1
+            - name: SQS_QUEUE_URL
+              value: https://sqs.ap-southeast-1.amazonaws.com/468683594325/cloudmart-orders
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              memory: 192Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]

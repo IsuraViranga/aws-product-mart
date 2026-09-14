@@ -1,0 +1,119 @@
+# ---------------------------------------------------------------------------
+# frontend
+#
+# Nginx serving the built React app, and proxying /api/* to the backends by
+# Service name. Its nginx.conf already assumes this - the comment in that file
+# says "In production K8s, these backends are resolved via ClusterIP Services".
+#
+# ORDER MATTERS HERE. Nginx resolves the hostnames in its proxy_pass lines when
+# it loads its config, and with no `resolver` directive it does that ONCE at
+# startup. If product-service, order-service and user-service do not exist as
+# Services yet, nginx exits immediately with:
+#
+#     host not found in upstream "product-service"
+#
+# and the pod lands in CrashLoopBackOff. Apply the three backends first. A
+# Service resolves as soon as the Service object exists - it does not need
+# ready pods behind it - so they only have to be created, not healthy.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: frontend
+  namespace: cloudmart
+  # No role annotation. Nginx serves files and proxies HTTP; it needs nothing
+  # from AWS.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: cloudmart
+  labels:
+    app: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      serviceAccountName: frontend
+      containers:
+        - name: frontend
+          image: 468683594325.dkr.ecr.ap-southeast-1.amazonaws.com/cloudmart/frontend:a2d828a3ca9326e9925a542c6ef926274487c7bd
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+
+          # No env at all. The React app was compiled at image build time, and
+          # the API routes are baked into nginx.conf. Nothing to configure at
+          # runtime - which is also why changing an API URL means a rebuild,
+          # not a restart.
+
+          # Both probes hit /health, which nginx answers from its own config
+          # with a static 200 - it never touches a backend. That is right for
+          # liveness. For readiness it is a compromise: this pod will report
+          # ready even if every backend is down. Since nginx's only job is to
+          # serve files and forward requests, it genuinely IS able to serve;
+          # the failure belongs to whichever backend is broken.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              # Nginx serving static files is very light. Half what the
+              # application services get, and still generous.
+              memory: 96Mi
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+---
+# ClusterIP, not LoadBalancer.
+#
+# It is tempting to make this type: LoadBalancer and be done - that creates a
+# Network Load Balancer and gives you an address immediately. We are using an
+# Ingress instead (next step), because an ALB gives path-based routing, TLS
+# termination and one shared load balancer for any future services, where
+# type: LoadBalancer would mean a separate NLB per service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: cloudmart
+  labels:
+    app: frontend
+spec:
+  type: ClusterIP
+  selector:
+    app: frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

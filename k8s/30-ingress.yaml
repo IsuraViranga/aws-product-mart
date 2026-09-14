@@ -1,0 +1,84 @@
+# ---------------------------------------------------------------------------
+# The public entry point.
+#
+# This single object is what makes CloudMart reachable from the internet. When
+# the AWS Load Balancer Controller sees it, it builds a real Application Load
+# Balancer, a target group, a listener and the security group rules to match -
+# then keeps them in sync as pods come and go.
+#
+# Only the frontend is routed here. product, order and user services stay
+# ClusterIP, reachable only from inside the cluster. Browser traffic hits
+# nginx, and nginx proxies /api/* onward internally - the routing already
+# written in services/frontend/nginx.conf. So there is exactly one way in.
+#
+# Cost: ~$0.0225/hr while this exists, plus LCU charges (fractions of a cent
+# at this traffic level). Deleting this object deletes the ALB, which is why
+# Phase E tears it down before the cluster.
+# ---------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cloudmart
+  namespace: cloudmart
+  annotations:
+    # internet-facing puts the ALB in the PUBLIC subnets - the ones tagged
+    # kubernetes.io/role/elb by the Terraform module. "internal" would use the
+    # private subnets instead and only be reachable inside the VPC.
+    alb.ingress.kubernetes.io/scheme: internet-facing
+
+    # ip mode registers POD IPs directly as ALB targets. The alternative,
+    # instance mode, registers the EC2 nodes and relies on kube-proxy for a
+    # second hop to the right pod. ip mode is possible because the VPC CNI
+    # gives every pod a real VPC address, and it means one less hop plus
+    # correct client IPs.
+    alb.ingress.kubernetes.io/target-type: ip
+
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+
+    # The ALB's own health check, separate from the kubelet's probes. This one
+    # decides whether the ALB sends traffic to a pod; the kubelet's decides
+    # whether the pod is restarted. Both point at /health, which nginx answers
+    # from its own config without touching a backend.
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
+    alb.ingress.kubernetes.io/healthy-threshold-count: "2"
+
+    # Without this the ALB waits 300s before removing a stopping pod from its
+    # target group, so a rolling update leaves traffic going to pods that have
+    # already gone. 30s is plenty here.
+    alb.ingress.kubernetes.io/target-group-attributes: deregistration_delay.timeout_seconds=30
+
+    # Tags every AWS resource the controller creates, so they show up in cost
+    # reports alongside everything else and are recognisable if orphaned.
+    alb.ingress.kubernetes.io/tags: Project=cloudmart,Environment=dev,ManagedBy=aws-load-balancer-controller
+
+spec:
+  # Matches the IngressClass the Helm chart installs. Without it, no controller
+  # claims this Ingress and nothing happens - no error, just silence.
+  ingressClassName: alb
+
+  rules:
+    - http:
+        paths:
+          # Everything goes to the frontend. nginx sorts out what is a static
+          # file and what is an API call.
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
+
+# ---------------------------------------------------------------------------
+# What is deliberately NOT here: TLS.
+#
+# HTTPS needs a certificate, and ACM will only issue one for a domain you
+# control. With no domain, the ALB gets a name like
+# k8s-cloudmart-abc123.ap-southeast-1.elb.amazonaws.com, which AWS owns and
+# will not certify for you.
+#
+# The honest options are: buy a domain and use ACM (real HTTPS, ~$12/yr), or
+# run HTTP and say so. Serving the login page of an app with JWT auth over
+# plain HTTP is a genuine finding worth writing up rather than hiding.
+# ---------------------------------------------------------------------------

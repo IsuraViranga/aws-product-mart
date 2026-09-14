@@ -34,6 +34,10 @@ terraform {
       source  = "hashicorp/tls"
       version = "~> 4.0"
     }
+    helm = {
+      source  = "hashicorp/helm"
+      version = "~> 3.0"
+    }
   }
 }
 
@@ -46,6 +50,32 @@ provider "aws" {
       Environment = var.environment
       ManagedBy   = "terraform"
       Owner       = "isura"
+    }
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Helm, pointed at the cluster this same root creates.
+#
+# Note the `exec` block: no token is stored anywhere. Terraform shells out to
+# `aws eks get-token` for a fresh short-lived credential on every operation,
+# the same mechanism kubectl uses. That is why this works with no kubeconfig
+# and no secret in state.
+#
+# The chicken-and-egg here is real - the provider is configured from outputs of
+# a resource in the same root. Terraform handles it because provider
+# configuration is resolved lazily, but it does mean the cluster must exist
+# before anything using this provider can be planned in detail.
+# ---------------------------------------------------------------------------
+provider "helm" {
+  kubernetes = {
+    host                   = module.eks.cluster_endpoint
+    cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+
+    exec = {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      command     = "aws"
+      args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", var.aws_region]
     }
   }
 }
