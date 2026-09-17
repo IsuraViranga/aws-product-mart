@@ -207,14 +207,14 @@ checkout → run tests → authenticate via OIDC → docker build
 - `fail-fast: false` so one broken service does not hide the other four.
 - Images are tagged **by commit SHA** and `latest`. Deployments use the SHA, so
   you can look at any running pod and know exactly which commit built it.
-- Pull requests build but never push — a PR must not publish an image someone
+- Pull requests build but never push a PR must not publish an image someone
   could then deploy.
 - `--provenance=false` on the build, because otherwise the tag points at an
   image index and ECR's scanner has nothing to scan.
 - The scan currently **reports** rather than blocks. Set
   `FAIL_ON_CRITICAL: 'true'` to make it a gate.
 
-### Job 2 — `deploy` (once, after all five pass)
+### Job 2 `deploy` (once, after all five pass)
 
 ```
 authenticate → verify AWS access → verify Kubernetes access
@@ -339,7 +339,7 @@ cd infra/eks ; terraform destroy
 cd ../network ; terraform apply -var enable_nat_gateway=false
 ```
 
-Then verify with the API rather than trusting the exit code — a failed
+Then verify with the API rather than trusting the exit code a failed
 `destroy` leaves a half-torn-down state, and the surviving half is usually the
 part that bills:
 
@@ -442,12 +442,12 @@ ACM, roughly $12/year.
 
 **No lockfiles for the Node services.** The Dockerfiles run `npm install`, which
 re-resolves every semver range at build time. Two builds of the same commit can
-produce different dependency trees — meaning **the image CI scanned is not
+produce different dependency trees meaning **the image CI scanned is not
 provably the image CI deployed**, which undercuts the scanning stage. Fix:
 generate `package-lock.json`, commit it, switch to `npm ci`.
 
 **`runAsNonRoot` is not set.** The Dockerfiles use `USER appuser` a name, not
-a numeric UID — and Kubernetes cannot verify a name is non-root, so the pod
+a numeric UID and Kubernetes cannot verify a name is non-root, so the pod
 would refuse to start. Containers do still run as `appuser`. Proper fix:
 `USER 10001` in the Dockerfile.
 
