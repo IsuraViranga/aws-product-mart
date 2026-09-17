@@ -44,7 +44,7 @@ Service name. Only the frontend is exposed; the other three are `ClusterIP`
 and unreachable from outside the cluster.
 
 **Two outbound paths, deliberately different.** DynamoDB traffic leaves through
-a **gateway VPC endpoint** — free, and it never touches the public internet.
+a **gateway VPC endpoint** free, and it never touches the public internet.
 SQS traffic cannot: AWS offers gateway endpoints only for S3 and DynamoDB, so
 it egresses through the NAT Gateway at $0.045/GB. An interface endpoint would
 remove that charge for ~$7/month, which only pays for itself above ~155 GB.
