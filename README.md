@@ -47,41 +47,6 @@ Placing an order touches four services and a queue. That is the point: it
 exercises service-to-service HTTP, asynchronous messaging, per-service
 identity and independent scaling, in a domain everyone already understands.
 
----
-
-## Architecture
-
-```
-  Developer                                              ┌──────────┐
-      │ git push                            OIDC, no keys│   ECR    │
-      ▼                                     ────────────▶│ 5 repos  │
-┌──────────────┐   kubectl apply  ┌───────────────────┐  └────┬─────┘
-│GitHub Actions│─────────────────▶│ EKS control plane │       │ image
-└──────────────┘                  │   (AWS-managed)   │       │ pull
-                                  └─────────┬─────────┘       │
-                                            │ schedules pods  │
-╔═══════════════════════════════════════════╪═════════════════╪═══════╗
-║ VPC 10.0.0.0/16          2 AZs: ap-southeast-1a / 1b        │       ║
-║                                            │                 │       ║
-║  ┌─ public subnets ──────────┐             ▼                 │       ║
-║  │  Application Load Balancer│   ┌─ private app subnets ─────┴────┐  ║
-║  │  NAT Gateway (AZ-a only)  │   │  frontend  ×2   (no IAM role)  │  ║
-║  └───────────┬───────────────┘   │  product   ×2 ──┐              │  ║
-║              │ inbound            │  order    ×2 ──┼─▶ IRSA       │  ║
-║              ▼                    │  user     ×2   │  (no IAM     │  ║
-║         frontend pods             │  notification×1─┘   role)     │  ║
-║                                   └────────────────────────────────┘  ║
-║  ┌─ private data subnets ────────────────────────────────────────┐   ║
-║  │  empty — reserved for RDS / ElastiCache, no route out         │   ║
-║  └───────────────────────────────────────────────────────────────┘   ║
-║                                                                       ║
-║  Gateway VPC Endpoints (S3 + DynamoDB) ──── free path ───▶ DynamoDB  ║
-╚═══════════════════════════════════════════════════════════════════════╝
-      ▲                                                          │
-      │ HTTPS                                    order ──▶ SQS ──┘
-   End user                                      SQS  ──▶ notification
-```
-
 **Request path.** Browser → Internet Gateway → ALB → `frontend` pod. Nginx
 inside the frontend proxies `/api/*` to the backend services by Kubernetes
 Service name. Only the frontend is exposed; the other three are `ClusterIP`
