@@ -1,7 +1,7 @@
 # ProductMart on AWS
 
 A five-service e-commerce platform, deployed to Amazon EKS entirely from code.
-Browse a catalogue, place an order, get a confirmation email — split into
+Browse a catalogue, place an order, get a confirmation email split into
 services that each own one job, so the interesting problems are the
 distributed ones rather than the shopping cart.
 
