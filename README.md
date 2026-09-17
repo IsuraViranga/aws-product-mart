@@ -8,15 +8,6 @@ distributed ones rather than the shopping cart.
 Everything here is provisioned by Terraform and deployed by GitHub Actions.
 Nothing was created by clicking in the AWS console.
 
-> **A note on naming.** The project was renamed from *CloudMart* to
-> *ProductMart*. AWS resources still carry the original `cloudmart-` prefix
-> (cluster, ECR repositories, IAM roles, the Kubernetes namespace). Renaming
-> them would mean destroying and recreating live infrastructure for no
-> functional gain, so the prefix stays. Where this README shows a real
-> resource name, it is the real one.
-
----
-
 ## Table of contents
 
 - [What it does](#what-it-does)
