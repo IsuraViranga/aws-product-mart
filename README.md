@@ -57,13 +57,13 @@ remove that charge for ~$7/month, which only pays for itself above ~155 GB.
 |---|---|---|---|---|
 | `frontend` | 80 | React + nginx | 2 | **none** |
 | `product-service` | 8001 | Python / Flask | 2 | DynamoDB (one table) |
-| `order-service` | 8002 | Node / Express | 2 | SQS — **send only** |
+| `order-service` | 8002 | Node / Express | 2 | SQS  **send only** |
 | `user-service` | 8003 | Python / Flask | 2 | **none** |
-| `notification-service` | 8004 | Node | **1** | SQS — **receive + delete only** |
+| `notification-service` | 8004 | Node | **1** | SQS  **receive + delete only** |
 
 **Why `notification-service` runs a single replica.** Two consumers polling the
 same SQS queue both receive messages, and standard queues guarantee
-*at-least-once* delivery, not exactly-once — so two replicas means customers
+*at-least-once* delivery, not exactly-once so two replicas means customers
 can get duplicate emails. Scaling it safely requires idempotent handling, which
 the service does not have. It also uses `strategy: Recreate` rather than a
 rolling update, so there is never a moment with two consumers on the queue.
@@ -71,9 +71,9 @@ rolling update, so there is never a moment with two consumers on the queue.
 **Health probes.** Every service exposes both `/health` and `/ready`, and they
 mean different things:
 
-- **liveness → `/health`** — is the process alive? Failing this *restarts* the
+- **liveness → `/health`**  is the process alive? Failing this *restarts* the
   container, so it must not depend on a downstream service.
-- **readiness → `/ready`** — can it actually serve? `product-service` queries
+- **readiness → `/ready`**  can it actually serve? `product-service` queries
   DynamoDB here. Failing this removes the pod from its Service but does **not**
   restart it.
 
@@ -92,7 +92,7 @@ A mistake in one cannot damage another.
 | `infra/bootstrap` | S3 state bucket, state locking | created once, never destroyed |
 | `infra/core` | ECR ×5, DynamoDB table, SQS queue + DLQ, IAM, GitHub OIDC provider | permanent, ~$0 |
 | `infra/network` | VPC, 6 subnets, IGW, NAT (behind a flag), gateway endpoints | permanent, $0 with NAT off |
-| `infra/eks` | Cluster, node group, addons, IRSA roles, load balancer controller, CI access | **ephemeral** — created for a session, destroyed after |
+| `infra/eks` | Cluster, node group, addons, IRSA roles, load balancer controller, CI access | **ephemeral**  created for a session, destroyed after |
 | `infra/budget` | Monthly and daily spend alarms | created first, destroyed last |
 | `infra/learn` | A throwaway S3 bucket used to learn the Terraform workflow | scratch, not part of the system |
 
@@ -151,7 +151,7 @@ The condition that makes this safe:
 
 Without it, *any* pod in the cluster could assume the role.
 
-This replaces what `docker-compose.yml` does locally — it bind-mounts
+This replaces what `docker-compose.yml` does locally it bind-mounts
 `~/.aws` into three containers, handing each one full admin credentials.
 
 ### Least privilege, concretely
@@ -170,7 +170,7 @@ at all — a compromise there yields no AWS access of any kind.
 
 ### Cluster access
 
-`authentication_mode = "API"` — access is granted with real AWS resources
+`authentication_mode = "API"` access is granted with real AWS resources
 (`aws_eks_access_entry`), visible in CloudTrail and revocable without
 `kubectl`. The old `aws-auth` ConfigMap approach had no audit trail and one bad
 edit could lock everyone out.
@@ -194,7 +194,7 @@ controller.
 
 ## CI/CD pipeline
 
-`.github/workflows/build-and-push.yml` — triggered by push to `main`, any pull
+`.github/workflows/build-and-push.yml` triggered by push to `main`, any pull
 request, or manually.
 
 ### Job 1 — `build` (five in parallel, one per service)
@@ -271,14 +271,14 @@ below.
 |---|---|
 | `QUEUE_BACKEND` | `memory` (default), `sqs`, `pubsub`, `servicebus` |
 | `SQS_QUEUE_URL` | queue URL, required when `QUEUE_BACKEND=sqs` |
-| `EMAIL_BACKEND` | `console` (default), `ses`, `sendgrid` — notification only |
+| `EMAIL_BACKEND` | `console` (default), `ses`, `sendgrid`  notification only |
 
 **user-service**
 
 | Variable | Values |
 |---|---|
 | `DB_BACKEND` | `memory` (default), `postgres` |
-| `JWT_SECRET` | signing key — **change in production** |
+| `JWT_SECRET` | signing key  **change in production** |
 
 </details>
 
@@ -324,7 +324,7 @@ aws eks update-kubeconfig --region ap-southeast-1 --name cloudmart
 # 4. The application (~2 min)
 cd ../.. ; kubectl apply -k k8s/
 
-# 5. The public URL — blank for 2-3 min while the ALB provisions
+# 5. The public URL blank for 2-3 min while the ALB provisions
 kubectl get ingress -n cloudmart
 ```
 
@@ -371,14 +371,14 @@ Left a month     $145.00
 
 **The two fixed charges are 73% of the bill and do not shrink if you run fewer
 pods.** Cutting from two nodes to one saves about a cent an hour. The only
-lever that matters is how long the cluster exists — which is why everything
+lever that matters is how long the cluster exists which is why everything
 expensive sits in one destroyable Terraform root.
 
 **Guardrails** (`infra/budget`, free):
 
-- **$20/month** — alerts at 50%, 90% actual and 100% *forecasted*. The forecast
+- **$20/month** alerts at 50%, 90% actual and 100% *forecasted*. The forecast
   alert is the useful one: it fires while there is still time to act.
-- **$3/day** — a forgotten cluster burns ~$4.70/day, so this trips within about
+- **$3/day**  a forgotten cluster burns ~$4.70/day, so this trips within about
   15 hours. You find out the next morning, not on payday.
 
 Both exclude credits, so they track real usage rather than netting to zero
@@ -405,12 +405,12 @@ behind free-tier credit.
 │       ├── networking/          reusable 3-tier VPC
 │       └── eks/                 reusable cluster
 ├── k8s/
-│   ├── kustomization.yaml       entry point — kubectl apply -k k8s/
+│   ├── kustomization.yaml       entry point kubectl apply -k k8s/
 │   ├── 00-namespace.yaml
 │   ├── 10-product-service.yaml  ServiceAccount + Deployment + Service
 │   ├── 11-order-service.yaml
 │   ├── 12-user-service.yaml     + Secret for the JWT key
-│   ├── 13-notification-service.yaml   no Service — nothing calls it
+│   ├── 13-notification-service.yaml   no Service nothing calls it
 │   ├── 20-frontend.yaml
 │   └── 30-ingress.yaml          creates the ALB
 ├── services/
@@ -446,7 +446,7 @@ produce different dependency trees — meaning **the image CI scanned is not
 provably the image CI deployed**, which undercuts the scanning stage. Fix:
 generate `package-lock.json`, commit it, switch to `npm ci`.
 
-**`runAsNonRoot` is not set.** The Dockerfiles use `USER appuser` — a name, not
+**`runAsNonRoot` is not set.** The Dockerfiles use `USER appuser` a name, not
 a numeric UID — and Kubernetes cannot verify a name is non-root, so the pod
 would refuse to start. Containers do still run as `appuser`. Proper fix:
 `USER 10001` in the Dockerfile.
@@ -466,20 +466,3 @@ Defensible as design-for-growth, but it is currently unused.
 CloudWatch with 7-day retention. No dashboards, no application metrics.
 
 ---
-
-## Team
-
-| Name | Student ID | Responsibilities |
-|---|---|---|
-| | | |
-| | | |
-| | | |
-
-## AI tool disclosure
-
-_State which AI assistants were used, for which tasks, and what review process
-was applied before merging their output._
-
----
-
-*IS 4630 Cloud Infrastructure Management · University of Moratuwa · 2025/2026*
