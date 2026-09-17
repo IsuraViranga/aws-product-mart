@@ -166,7 +166,7 @@ The producer **cannot read the queue**; the consumer **cannot write to it**.
 A bug in one cannot cause the other's failure mode.
 
 `frontend` and `user-service` get a ServiceAccount with **no role annotation**
-at all — a compromise there yields no AWS access of any kind.
+at all a compromise there yields no AWS access of any kind.
 
 ### Cluster access
 
